@@ -32,19 +32,23 @@ print("Extending for 5 seconds...")
 extend()
 start = time.ticks_ms()
 while time.ticks_diff(time.ticks_ms(), start) < 5000:
-    print("Position:", read_position())
+    position = read_position()
+    print("Position:", position)
     time.sleep(0.1)
-stop_motor()
+    if position < 300:
+        stop_motor()
 
-print("Waiting 1 second before retracting...")
-time.sleep(1)
+# stop_motor()
 
-print("Retracting for 5 seconds...")
-retract()
-start = time.ticks_ms()
-while time.ticks_diff(time.ticks_ms(), start) < 5000:
-    print("Position:", read_position())
-    time.sleep(0.1)
-stop_motor()
+# print("Waiting 1 second before retracting...")
+# time.sleep(1)
+
+# print("Retracting for 5 seconds...")
+# retract()
+# start = time.ticks_ms()
+# while time.ticks_diff(time.ticks_ms(), start) < 5000:
+#     print("Position:", read_position())
+#     time.sleep(0.1)
+# stop_motor()
 
 print("Done.")
