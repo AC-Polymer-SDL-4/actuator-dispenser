@@ -1,10 +1,6 @@
-aqueous_waste_location: #Individual location
-  x_origin: 44
-  y_origin: 32
-  z_origin: 0
-main_20mL_rack: #Array-location
-  num_x: 3 #Rows
-  num_y: 2 #Columns
+vial_rack: #Array-location
+  num_x: 2 #Rows
+  num_y: 4 #Columns
   x_origin: 166.5 #x-value 
   y_origin: 68
   z_origin: 0
