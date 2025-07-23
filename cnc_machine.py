@@ -10,7 +10,7 @@ class CNC_Machine():
     BAUD_RATE = 115200
     SERIAL_PORT = "COM3" #Serial Port you are using
     X_LOW_BOUND = 0
-    X_HIGH_BOUND = 135 #Note that the system is being weird... This should be 270! 
+    X_HIGH_BOUND = 280 #Note that the system is being weird... This should be 270! 
     Y_LOW_BOUND = 0
     Y_HIGH_BOUND = 150
     Z_LOW_BOUND = -35
