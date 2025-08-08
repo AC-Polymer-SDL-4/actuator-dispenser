@@ -7,7 +7,7 @@ class Actuator:
     Designed for Raspberry Pi Pico (uses duty_u16 scale: 0–65535).
     """
 
-    def __init__(self):
+    def __init__(self, speed = 32768):  # Default speed set to 50% duty cycle
         # Setup GPIO pins for direction control
         self.IN1 = Pin(26, Pin.OUT)
         self.IN2 = Pin(25, Pin.OUT)
@@ -15,7 +15,7 @@ class Actuator:
         # Setup PWM pin for speed control
         self.ENA = PWM(Pin(27))
         self.ENA.freq(1000)
-        self.ENA.duty_u16(32768)  # 50% duty cycle (range: 0–65535)
+        self.ENA.duty_u16(speed)  # 50% duty cycle (range: 0–65535)
 
     def extend(self, time_seconds):
         """
