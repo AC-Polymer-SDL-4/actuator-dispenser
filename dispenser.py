@@ -46,7 +46,7 @@ class Liquid_Dispenser:
                 self.cnc_machine.move_to_point(z=0)
                 self.cnc_machine.move_to_location(dest_location, dest_index, safe=False)
                 self.actuator.extend(air_time + retract_time + buffer_time, speed=speed)
-                self.cnc_machine.move_to_point(z=-73)  # Move down to mix
+                self.cnc_machine.move_to_point(z=-62)  # Move down to mix
                 for i in range(3):  # Mix 3 times
                     self.actuator.retract(1, speed=speed)  # Retract to mix
                     self.actuator.extend(1, speed=speed)  # Extend to mix

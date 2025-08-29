@@ -15,12 +15,12 @@ slope = 0.4295  # Time per mL (or mL per sec reciprocal)
 # Setup DataFrame
 data = {
     'well': list(range(24)),
-    'lemon_vol': [0, 0, 0, 0, 0.1, 0.1, 0.1, 0.1, 0.2, 0.2, 0.2, 0.2, 0.3, 0.3, 0.3, 0.3, 0.4, 0.4, 0.4, 0.4, 0.5, 0.5, 0.5, 0.5],
-    'soda_vol':   [0, 0.17, 0.33, 0.5, 0, 0.17, 0.33, 0.5, 0, 0.17, 0.33, 0.5, 0, 0.17, 0.33, 0.5, 0, 0.17, 0.33, 0.5, 0, 0.17, 0.33, 0.5],
-    'litmus_vol': [0.1] * 24,  # Assuming a constant volume for litmus
+    'lemon_vol': [0.0, 0.0, 0.0, 0.0, 0.05, 0.05, 0.05, 0.05, 0.1, 0.1, 0.1, 0.1, 0.15, 0.15, 0.15, 0.15, 0.2, 0.2, 0.2, 0.2, 0.25, 0.25, 0.25, 0.25],
+    'soda_vol': [0.0, 0.085, 0.165, 0.25, 0.0, 0.085, 0.165, 0.25, 0.0, 0.085, 0.165, 0.25, 0.0, 0.085, 0.165, 0.25, 0.0, 0.085, 0.165, 0.25, 0.0, 0.085, 0.165, 0.25],
+    'litmus_vol': [0.05] * 24
 }
 df = pd.DataFrame(data)
-df['water_vol'] = 1 - (df['lemon_vol'] + df['soda_vol'])
+df['water_vol'] = 0.5 - (df['lemon_vol'] + df['soda_vol'])
 
 #litmus step
 for i in range(24):
@@ -31,7 +31,7 @@ for i in range(24):
             dest_location="well_plate",
             dest_index=i,
             vol_pipet=df.loc[i, 'litmus_vol'],
-            air_time=0.5,
+            air_time=1,
             buffer_time=1,
             speed=actuator_power,
             mix=False
@@ -40,9 +40,9 @@ for i in range(24):
 
 dispenser.dispense_condition(
     source_location="vial_rack",
-    source_index=4,  # Assuming index 1 is for water
+    source_index=6,  # Assuming index 1 is for water
     dest_location="vial_rack",  # Waste location
-    dest_index=5,  # waste index
+    dest_index=7,  # waste index
     vol_pipet=1,  # water volume
     air_time=0.7,
     buffer_time=1,
@@ -58,7 +58,7 @@ for i in range(24):
             dest_location="well_plate",
             dest_index=i,
             vol_pipet=df.loc[i, 'water_vol'],
-            air_time=0.5,
+            air_time=1,
             buffer_time=1,
             speed=actuator_power,
             mix=False
@@ -67,9 +67,9 @@ for i in range(24):
 
 dispenser.dispense_condition(
     source_location="vial_rack",
-    source_index=4,  # Assuming index 1 is for water
+    source_index=6,  # Assuming index 1 is for water
     dest_location="vial_rack",  # Waste location
-    dest_index=5,  # waste index
+    dest_index=7,  # waste index
     vol_pipet=1,  # water volume
     air_time=0.7,
     buffer_time=1,
@@ -85,7 +85,7 @@ for i in range(24):
             dest_location="well_plate",
             dest_index=i,
             vol_pipet=df.loc[i, 'soda_vol'],
-            air_time=0.5,
+            air_time=1,
             buffer_time=1,
             speed=actuator_power,
             mix=False
@@ -94,9 +94,9 @@ for i in range(24):
 
 dispenser.dispense_condition(
     source_location="vial_rack",
-    source_index=4,  # Assuming index 1 is for water
+    source_index=6,  # Assuming index 1 is for water
     dest_location="vial_rack",  # Waste location
-    dest_index=5,  # waste index
+    dest_index=7,  # waste index
     vol_pipet=1,  # water volume
     air_time=0.7,
     buffer_time=1,
@@ -112,7 +112,7 @@ for i in range(24):
             dest_location="well_plate",
             dest_index=i,
             vol_pipet=df.loc[i, 'lemon_vol'],
-            air_time=0.5,
+            air_time=1,
             buffer_time=1,
             speed=actuator_power,
             mix=True
