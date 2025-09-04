@@ -10,10 +10,10 @@ class CNC_Machine():
     BAUD_RATE = 115200
     SERIAL_PORT = "COM3" #Serial Port you are using
     X_LOW_BOUND = 0
-    X_HIGH_BOUND = 135 #Note that the system is being weird... This should be 270! 
+    X_HIGH_BOUND = 280 #Note that the system is being weird... This should be 270! 
     Y_LOW_BOUND = 0
     Y_HIGH_BOUND = 150
-    Z_LOW_BOUND = -35
+    Z_LOW_BOUND = -70 #The lowest point the CNC can go
     Z_HIGH_BOUND = 0
 
     #Tracks the locations
@@ -86,7 +86,7 @@ class CNC_Machine():
             print(f"Cannot move to (X{x}, Y{y}, Z{z}), coordinates not within bounds")
 
     #Move to a location defined in the Locations file
-    def move_to_location(self,location_name,location_index,safe=True,speed=3000):
+    def move_to_location(self,location_name,location_index,safe=False,speed=3000):
         print(f"Moving to location: {location_name} at index {location_index}")
         x,y,z = self.get_location_position(location_name,location_index)
         if safe:

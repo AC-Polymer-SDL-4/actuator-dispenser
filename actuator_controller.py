@@ -21,17 +21,17 @@ class ActuatorRemote:
         except subprocess.CalledProcessError as e:
             print(f"mpremote command failed: {e}")
 
-    def extend(self, seconds):
+    def extend(self, seconds, speed=32768):
         """
         Remotely extend the actuator for a given number of seconds.
         """
-        self._call(f"import actuator; a=actuator.Actuator(); a.extend({seconds}); a.stop_actuator()")
+        self._call(f"import actuator; a=actuator.Actuator({speed}); a.extend({seconds}); a.stop_actuator()")
 
-    def retract(self, seconds):
+    def retract(self, seconds, speed=32768):
         """
         Remotely retract the actuator for a given number of seconds.
         """
-        self._call(f"import actuator; a=actuator.Actuator(); a.retract({seconds}); a.stop_actuator()")
+        self._call(f"import actuator; a=actuator.Actuator({speed}); a.retract({seconds}); a.stop_actuator()")
 
     def stop(self):
         """
