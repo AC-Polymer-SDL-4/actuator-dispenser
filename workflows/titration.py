@@ -1,6 +1,4 @@
-from actuator_controller import ActuatorRemote
-from cnc_machine import CNC_Machine
-from dispenser import Liquid_Dispenser
+from base_workflow import Liquid_Dispenser
 import time
 import os
 import pandas as pd
