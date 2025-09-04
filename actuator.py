@@ -15,7 +15,7 @@ class Actuator:
         # Setup PWM pin for speed control
         self.ENA = PWM(Pin(27))
         self.ENA.freq(1000)
-        self.ENA.duty_u16(32768)  # 50% duty cycle (range: 0–65535)
+        self.ENA.duty_u16(0)  # 50% duty cycle (range: 0–65535)
 
     def extend(self, time_seconds):
         """
@@ -23,7 +23,7 @@ class Actuator:
         """
         self.IN1.on()
         self.IN2.off()
-        self.ENA.duty_u16(32768)
+        self.ENA.duty_u16(10000)
         print("Extending...")
         time.sleep(time_seconds)
 
@@ -33,7 +33,7 @@ class Actuator:
         """
         self.IN1.off()
         self.IN2.on()
-        self.ENA.duty_u16(32768)
+        self.ENA.duty_u16(10000)
         print("Retracting...")
         time.sleep(time_seconds)
 
