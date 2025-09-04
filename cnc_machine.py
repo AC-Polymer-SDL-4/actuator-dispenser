@@ -3,28 +3,28 @@ import logging
 import serial
 import time
 import yaml
+from log_config import setup_logger, log_method_entry, log_method_exit, log_virtual_action
 
 class CNC_Machine:
     """
     GRBL CNC controller helper with:
       - Persistent serial connection
       - Virtual (no-COM) mode for testing
-      - Structured logging (DEBUG/INFO/WARNING/ERROR)
+      - Structured logging with file output in logs/ folder
     """
 
     def __init__(self, com, baud_rate=115200, x_low_bound=0, x_high_bound=270, 
                  y_low_bound=0, y_high_bound=150, z_low_bound=-35, z_high_bound=0,
-                 virtual=False, locations_file=None, log_level=logging.INFO,):
-        self.logger = logging.getLogger(__name__ + ".CNC_Machine")
-        if not self.logger.handlers:
-            h = logging.StreamHandler()
-            fmt = logging.Formatter(
-                "%(asctime)s | %(levelname)s | %(name)s | %(message)s",
-                datefmt="%H:%M:%S",
-            )
-            h.setFormatter(fmt)
-            self.logger.addHandler(h)
-        self.logger.setLevel(log_level)
+                 virtual=False, locations_file='location_status.yaml', log_level=logging.INFO,):
+        
+        # Setup centralized logging with virtual mode tagging
+        self.logger = setup_logger("cnc_machine", virtual=virtual, log_level=log_level)
+        
+        log_method_entry(self.logger, "__init__", 
+                        com=com, baud_rate=baud_rate, virtual=virtual,
+                        x_bounds=(x_low_bound, x_high_bound),
+                        y_bounds=(y_low_bound, y_high_bound),
+                        z_bounds=(z_low_bound, z_high_bound))
 
         # Set constants from parameters
         self.BAUD_RATE = baud_rate

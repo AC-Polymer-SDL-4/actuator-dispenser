@@ -1,6 +1,7 @@
 # Output directories
 output/
 Other/
+logs/
 
 # Python cache and compiled files
 __pycache__/

@@ -1,10 +1,14 @@
-from base_workflow import Liquid_Dispenser
-import time
-import os
+from base_workflow import Liquid_Dispenser, start_workflow_logging
 import pandas as pd
 
-# Initialize dispenser
-dispenser = Liquid_Dispenser(cnc_comport="COM4", actuator_comport="COM3")
+# Initialize workflow logging
+workflow_logger = start_workflow_logging("titration", virtual=True)
+workflow_logger.info("Starting titration workflow - pH indicator experiment")
+
+virtual = True
+
+# Initialize dispenser in virtual mode
+dispenser = Liquid_Dispenser(cnc_comport="COM4", actuator_comport="COM3", virtual=virtual)
 
 # Constants
 actuator_power = 65520
@@ -117,32 +121,27 @@ for i in range(24):
         )
         print(f"Dispensed lemon juice to well {i}")
 
-# Capture images and compute average RGB values
 for i in range(24):
-    dispenser.cnc_machine.move_to_location("well_plate_camera", i)
-    time.sleep(1)
-    dispenser.cnc_machine.move_to_point(z=-30)
-    time.sleep(1)
-    dispenser.capture_and_save(i)
+    try:
+        r, g, b = dispenser.get_image_rgb("well_plate", i, f"_{i}")
+        # Add RGB values to the existing DataFrame
+        df.loc[i, 'Red'] = r
+        df.loc[i, 'Green'] = g
+        df.loc[i, 'Blue'] = b
 
-    # Once the image is saved, compute its average RGB in the center and automatically save the crop
-    image_path = os.path.join(dispenser.output_dir, f"well_plate{i}.jpg")
-    r, g, b = dispenser.average_rgb_in_center(image_path, 100, show_crop=True, save_crop=True)
-
-    # Add RGB values to the existing DataFrame
-    df.loc[i, 'Red'] = r
-    df.loc[i, 'Green'] = g
-    df.loc[i, 'Blue'] = b
+    except Exception as e:
+        if not virtual:
+            workflow_logger.error(f"Cannot capture image for well {i}: {e}")
+        continue
     
-dispenser.gif_maker()
+    #dispenser.gif_maker()
 
-dispenser.cleanup()
-
-print (df)
+    dispenser.camera.cleanup()
 
 # Save DataFrame to CSV
-output_csv = "well_plate_data.csv"
-df.to_csv(output_csv, index=False) 
-# Save DataFrame to CSV
-print(f"Data saved to {output_csv}")
-
+if not virtual:
+    print (df)
+    output_csv = "well_plate_data.csv"
+    df.to_csv(output_csv, index=False) 
+    # Save DataFrame to CSV
+    print(f"Data saved to {output_csv}")
