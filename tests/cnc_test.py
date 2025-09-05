@@ -1,4 +1,4 @@
-from cnc_machine import CNC_Machine
+from base_workflow import CNC_Machine
 
 cnc = CNC_Machine(com = "COM4")
 

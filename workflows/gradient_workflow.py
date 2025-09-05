@@ -2,14 +2,27 @@ from base_workflow import Liquid_Dispenser, start_workflow_logging
 import time
 import os
 import pandas as pd
+import datetime
 
 # Initialize workflow logging
 workflow_logger = start_workflow_logging("gradient_workflow", virtual=True)
 workflow_logger.info("Starting gradient workflow - Creating color gradients across well plate")
 
+# Get workflow name (file name without extension)
+workflow_name = os.path.splitext(os.path.basename(__file__))[0]
+timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+output_dir = os.path.join("output", workflow_name, timestamp)
+
 # Initialize dispenser in virtual mode
-virtual = True
-dispenser = Liquid_Dispenser(cnc_comport="COM4", actuator_comport="COM3", virtual=virtual)
+virtual = False
+dispenser = Liquid_Dispenser(cnc_comport="COM4", 
+                             actuator_comport="COM3", 
+                             camera_index=1, 
+                             virtual=virtual,
+                             output_dir=output_dir)
+dispenser.cnc_machine.Z_LOW_BOUND = -70 #Just in this case
+
+dispenser.cnc_machine.home()
 
 # Constants
 actuator_power = 65520
@@ -116,6 +129,6 @@ for i in range(24):
 if not virtual:
     print (df)
     output_csv = "well_plate_data.csv"
-    df.to_csv(output_csv, index=False) 
+    df.to_csv(os.path.join(output_dir,output_csv), index=False) 
     # Save DataFrame to CSV
     print(f"Data saved to {output_csv}")

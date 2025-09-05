@@ -1,4 +1,4 @@
-from actuator_controller import ActuatorRemote
+from base_workflow import ActuatorRemote
 
 act = ActuatorRemote(port='COM3')
 

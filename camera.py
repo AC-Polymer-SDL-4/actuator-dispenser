@@ -110,7 +110,7 @@ class Camera:
                 path = os.path.join(self.output_dir, filename)
                 cv2.imwrite(path, frame)
                 self.logger.info("Photo saved: %s", filename)
-                return filename
+                return path
             else:
                 self.logger.error("Failed to capture frame for dest_index: %s", dest_index)
                 return None
