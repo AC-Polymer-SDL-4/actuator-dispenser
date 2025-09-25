@@ -121,7 +121,7 @@ class Liquid_Dispenser:
         
         try:
             if mix:
-                self.logger.info("Performing dispense with mixing")
+                self.logger.debug("Performing dispense with mixing")
                 # Dispense with mixing at destination
                 for cycle in range(num_dispenses):
                     self.logger.debug("Starting dispense cycle %d/%d", cycle + 1, num_dispenses)
@@ -163,7 +163,7 @@ class Liquid_Dispenser:
                     self.cnc_machine.move_to_point(z=0)  # Move back up
                     
             else:
-                self.logger.info("Performing standard dispense (no mixing)")
+                self.logger.debug("Performing standard dispense (no mixing)")
                 # Standard dispense without mixing
                 for cycle in range(num_dispenses):
                     self.logger.debug("Starting dispense cycle %d/%d", cycle + 1, num_dispenses)
@@ -270,7 +270,7 @@ class Liquid_Dispenser:
                 self.logger.debug("Dispensing to waste: %.2f seconds total", total_dispense_time)
                 self.actuator.extend(total_dispense_time, speed=speed)
                 
-            self.logger.info("Conditioning completed successfully")
+            self.logger.debug("Conditioning completed successfully")
             
         except Exception as e:
             self.logger.error("Conditioning failed: %s", e)
@@ -304,7 +304,8 @@ class Liquid_Dispenser:
         """
         Capture an image at a specific location and analyze its RGB values.
         
-        This method:
+        In virtual mode, returns simulated RGB values for testing.
+        In real mode:
         1. Moves the CNC to the specified location
         2. Captures an image using the camera
         3. Analyzes the center region for average RGB values
@@ -323,6 +324,27 @@ class Liquid_Dispenser:
             location, location_index, image_suffix
         )
         
+        # Handle virtual mode with dummy RGB values
+        if self.virtual:
+            import random
+            
+            # Provide realistic dummy values for different scenarios
+            if location_index == 0 and location == "well_plate":
+                # Target sample - use a consistent "target" color (purple-ish)
+                dummy_rgb = (128, 64, 192)
+                self.logger.info("[VIRTUAL] Using target sample RGB: (%.1f, %.1f, %.1f)", *dummy_rgb)
+            else:
+                # Experimental wells - generate varied colors with some randomness
+                # but keep them in realistic ranges for color mixing
+                base_r = random.randint(80, 180)
+                base_g = random.randint(60, 160) 
+                base_b = random.randint(70, 170)
+                dummy_rgb = (base_r, base_g, base_b)
+                self.logger.info("[VIRTUAL] Using simulated RGB: (%.1f, %.1f, %.1f)", *dummy_rgb)
+            
+            return dummy_rgb
+        
+        # Real hardware mode
         try:
             # Move to the specified location for imaging
             self.logger.debug("Moving to imaging position")

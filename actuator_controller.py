@@ -75,7 +75,7 @@ class ActuatorRemote:
         """
         log_method_entry(self.logger, "extend", seconds=seconds, speed=speed)
         
-        self.logger.info("Extending actuator: %.2f seconds at speed %d", seconds, speed)
+        self.logger.debug("Extending actuator: %.2f seconds at speed %d", seconds, speed)
         command = f"import actuator; a=actuator.Actuator({speed}); a.extend({seconds}); a.stop_actuator()"
         
         self._call(command)
@@ -91,7 +91,7 @@ class ActuatorRemote:
         """
         log_method_entry(self.logger, "retract", seconds=seconds, speed=speed)
         
-        self.logger.info("Retracting actuator: %.2f seconds at speed %d", seconds, speed)
+        self.logger.debug("Retracting actuator: %.2f seconds at speed %d", seconds, speed)
         command = f"import actuator; a=actuator.Actuator({speed}); a.retract({seconds}); a.stop_actuator()"
         
         self._call(command)
@@ -103,7 +103,7 @@ class ActuatorRemote:
         """
         log_method_entry(self.logger, "stop")
         
-        self.logger.info("Stopping actuator immediately")
+        self.logger.debug("Stopping actuator immediately")
         command = "import actuator; a=actuator.Actuator(); a.stop_actuator()"
         
         self._call(command)

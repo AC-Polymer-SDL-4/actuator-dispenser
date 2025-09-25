@@ -5,7 +5,8 @@ workflow_logger = start_workflow_logging("example_workflow", virtual=True)
 workflow_logger.info("Starting example workflow - Basic titration demo")
 
 # Initialize dispenser in virtual mode
-cnc_dispenser = Liquid_Dispenser(cnc_comport="COM3", actuator_comport="COM7", virtual=True,z_low_bound=-70) 
+cnc_dispenser = Liquid_Dispenser(cnc_comport="COM3", actuator_comport="COM7", virtual=True)
+cnc_dispenser.cnc_machine.Z_LOW_BOUND=-70 
 
 # Titration workflow
 workflow_logger.info("Beginning titration: aspirate from vial 0 to wellplate spot 2")
