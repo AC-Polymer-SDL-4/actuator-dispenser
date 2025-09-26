@@ -59,13 +59,13 @@ def setup_logger(module_name, virtual=False, log_level=logging.INFO):
         datefmt="%Y-%m-%d %H:%M:%S"
     )
     
-    # Console handler (for immediate feedback)
+    # Console handler (for immediate feedback) - show INFO and above
     console_handler = logging.StreamHandler()
     console_formatter = logging.Formatter(
         "%(levelname)-8s | %(name)s | %(message)s"
     )
     console_handler.setFormatter(console_formatter)
-    console_handler.setLevel(log_level)
+    console_handler.setLevel(logging.INFO)  # Show INFO and above in console
     
     # Try to set UTF-8 encoding for console on Windows
     try:
@@ -85,15 +85,15 @@ def setup_logger(module_name, virtual=False, log_level=logging.INFO):
     log_filename = f"{workflow_name}{virtual_tag}_{timestamp}.log"
     log_filepath = os.path.join(logs_dir, log_filename)
     
-    # Use RotatingFileHandler to manage log file size (max 10MB, keep 5 backups)
+    # Use RotatingFileHandler to manage log file size (max 1MB, keep 3 backups)
     file_handler = RotatingFileHandler(
         log_filepath, 
-        maxBytes=10*1024*1024,  # 10MB
-        backupCount=5,
+        maxBytes=1*1024*1024,  # 1MB instead of 10MB
+        backupCount=3,
         encoding='utf-8'  # Explicitly set UTF-8 encoding
     )
     file_handler.setFormatter(formatter)
-    file_handler.setLevel(logging.DEBUG)  # File gets all messages, console filtered by log_level
+    file_handler.setLevel(logging.DEBUG)  # Capture everything in file for debugging
     logger.addHandler(file_handler)
     
     # Log the initialization only once per workflow
@@ -107,29 +107,33 @@ def setup_logger(module_name, virtual=False, log_level=logging.INFO):
 
 def log_method_entry(logger, method_name, **kwargs):
     """
-    Helper function to log method entry with parameters.
+    Helper function to log method entry with parameters - only for important methods.
     
     Args:
         logger: Logger instance
         method_name (str): Name of the method being called
         **kwargs: Method parameters to log
     """
-    params = ", ".join([f"{k}={v}" for k, v in kwargs.items()])
-    logger.info(f"-> {method_name}({params})")
+    # Only log entry for key methods, not every single method call
+    if method_name in ['__init__', 'dispense_between', 'get_image_rgb', 'dispense_condition']:
+        params = ", ".join([f"{k}={v}" for k, v in kwargs.items()])
+        logger.debug(f"-> {method_name}({params})")
 
 def log_method_exit(logger, method_name, result=None):
     """
-    Helper function to log method exit with optional result.
+    Helper function to log method exit - only for important methods.
     
     Args:
         logger: Logger instance
         method_name (str): Name of the method exiting
         result: Optional result to log
     """
-    if result is not None:
-        logger.info(f"<- {method_name} completed - Result: {result}")
-    else:
-        logger.info(f"<- {method_name} completed")
+    # Only log exit for key methods
+    if method_name in ['__init__', 'dispense_between', 'get_image_rgb', 'dispense_condition']:
+        if result is not None:
+            logger.debug(f"<- {method_name} completed - Result: {result}")
+        else:
+            logger.debug(f"<- {method_name} completed")
 
 def log_virtual_action(logger, action_description):
     """

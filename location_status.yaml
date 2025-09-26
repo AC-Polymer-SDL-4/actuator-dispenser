@@ -30,3 +30,11 @@ well_plate_camera: #Array-location
   z_origin: -10
   x_offset: 20 #Measure with caliper
   y_offset: -20 #MEasure with caliper
+reservoir: #Array-location for color reservoirs
+  num_x: 2 #Columns  
+  num_y: 5 #Rows (positions 0-9, plus wash and waste)
+  x_origin: 50.000 #move the cnc machine with the needle attached, and find the position 
+  y_origin: 50.000
+  z_origin: 0
+  x_offset: 1 #Measure with caliper
+  y_offset: -1 #Measure with caliper
