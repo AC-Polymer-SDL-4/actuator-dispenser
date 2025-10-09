@@ -24,22 +24,22 @@ def initialize_campaign(upper_bound, random_seed, random_recs=False):
     parameters = [
         NumericalDiscreteParameter(
             name = 'Water',
-            values = np.array(range(0, 240, 10))
+            values = np.array(range(0, 1000, 50))
             #encoding = 'INT'
             ),
         NumericalDiscreteParameter(
             name = 'R',
-            values = np.array(range(0, 240, 10)),
+            values = np.array(range(0, 1000, 50)),
             #encoding = 'INT'
             ),
         NumericalDiscreteParameter(
             name = 'Y',
-            values= np.array(range(0, 240, 10)),
+            values= np.array(range(0, 1000, 50)),
             #encoding = 'INT'
             ),
         NumericalDiscreteParameter(
             name = 'B',
-            values= np.array(range(0, 240, 10)),
+            values= np.array(range(0, 1000, 50)),
             #encoding = 'INT'
             ),
     ]
@@ -47,7 +47,7 @@ def initialize_campaign(upper_bound, random_seed, random_recs=False):
     constraints = [DiscreteSumConstraint(
             parameters=["Water", "R", "Y", "B"],  # these parameters must exist in the search space
             condition=ThresholdCondition(  # set condition that should apply to the sum
-            threshold=240,
+            threshold=1000,
             operator="="))]
 
     searchspace = SearchSpace.from_product(parameters=parameters, constraints=constraints)

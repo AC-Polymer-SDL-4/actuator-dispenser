@@ -6,14 +6,20 @@ vial_rack: #Array-location
   z_origin: 0
   x_offset: 37 #Measure with caliper
   y_offset: -32 #MEasure with caliper
+  aspirate_height: none
+  dspirate_height: none
+  mixing_height: none
 reservoir_12: #Array-location
   num_x: 1 #Rows
   num_y: 12 #Columns
   x_origin: 97.0 #move the cnc machine with the needle attached, and find the position 
   y_origin: 102.0
-  z_origin: 0 #EDIT!!!
+  z_origin: 0 #-64 (inside dispense_between()) 
   x_offset: 0 #Measure with caliper
   y_offset: -8.92 #MEasure with caliper
+  aspirate_height: -64
+  dispense_height: -15
+  mixing_height: -64
 well_plate: #Array-location
   num_x: 4 #Rows
   num_y: 6 #Columns
@@ -22,19 +28,17 @@ well_plate: #Array-location
   z_origin: 0
   x_offset: 19 #Measure with caliper
   y_offset: -20 #MEasure with caliper
+  aspirate_height: none
+  dispense_height: -25
+  mixing_height: -55
 well_plate_camera: #Array-location
   num_x: 4 #Rows
   num_y: 6 #Columns
-  x_origin: 166.000 #move the cnc machine with the needle attached, and find the position 
-  y_origin: 140.000
+  x_origin: 168.000 #move the cnc machine with the needle attached, and find the position 
+  y_origin: 137.000
   z_origin: -10
   x_offset: 20 #Measure with caliper
-  y_offset: -20 #MEasure with caliper
-reservoir: #Array-location for color reservoirs
-  num_x: 2 #Columns  
-  num_y: 5 #Rows (positions 0-9, plus wash and waste)
-  x_origin: 50.000 #move the cnc machine with the needle attached, and find the position 
-  y_origin: 50.000
-  z_origin: 0
-  x_offset: 1 #Measure with caliper
-  y_offset: -1 #Measure with caliper
+  y_offset: -18.9 #MEasure with caliper
+  aspirate_height: none
+  dispense_height: none
+  mixing_height: none

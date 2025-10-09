@@ -307,3 +307,33 @@ class CNC_Machine:
                 z, self.Z_LOW_BOUND, self.Z_HIGH_BOUND,
             )
         return inside
+
+    def get_location_height(self, location_name, height_type):
+        loc = self.LOCATIONS.get(location_name)
+        if not loc:
+            raise KeyError(f"Unknown location '{location_name}'")
+        if height_type == "aspirate":
+            height = loc["aspirate_height"]
+        elif height_type == "dispense":
+            height = loc["dispense_height"]
+        elif height_type =="mixing":
+            height = loc["mixing_height"]
+        else:
+            raise Exception("undefined height type")
+        
+        return height
+        
+    def move_to_aspirate_height(self, location_name):
+        h = self.get_location_height(location_name=location_name, height_type="aspirate")
+        if h is not None:
+            self.move_to_point(z=h)
+    
+    def move_to_dispense_height(self, location_name):
+        h = self.get_location_height(location_name=location_name, height_type="dispense")
+        if h is not None:
+            self.move_to_point(z=h)
+
+    def move_to_mixing_height(self, location_name):
+        h = self.get_location_height(location_name=location_name, height_type="mixing")
+        if h is not None:
+            self.move_to_point(z=h)

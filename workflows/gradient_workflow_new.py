@@ -1,0 +1,138 @@
+from base_workflow import Liquid_Dispenser, start_workflow_logging
+import time
+import os
+import pandas as pd
+import datetime
+
+# Initialize workflow logging
+workflow_logger = start_workflow_logging("gradient_workflow", virtual=True)
+workflow_logger.info("Starting gradient workflow - Creating color gradients across well plate")
+
+# Get workflow name (file name without extension)
+workflow_name = os.path.splitext(os.path.basename(__file__))[0]
+timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+output_dir = os.path.join("output", workflow_name, timestamp)
+
+# Initialize dispenser in virtual mode
+virtual = False
+dispenser = Liquid_Dispenser(cnc_comport="COM4", 
+                             actuator_comport="COM3", 
+                             camera_index=1, 
+                             virtual=virtual,
+                             output_dir=output_dir)
+dispenser.cnc_machine.Z_LOW_BOUND = -70 #Just in this case
+
+dispenser.cnc_machine.home()
+
+# Constants
+actuator_power = 65520
+slope = 0.4295  # Time per mL (or mL per sec reciprocal)
+
+# Setup DataFrame
+data = {
+    'well': list(range(24)),
+    'yellow_vol': [0, 0, 0, 0, 0.1, 0.1, 0.1, 0.1, 0.2, 0.2, 0.2, 0.2, 0.3, 0.3, 0.3, 0.3, 0.4, 0.4, 0.4, 0.4, 0.5, 0.5, 0.5, 0.5],
+    'blue_vol':   [0, 0.17, 0.33, 0.5, 0, 0.17, 0.33, 0.5, 0, 0.17, 0.33, 0.5, 0, 0.17, 0.33, 0.5, 0, 0.17, 0.33, 0.5, 0, 0.17, 0.33, 0.5],
+}
+df = pd.DataFrame(data)
+df['water_vol'] = 1 - (df['yellow_vol'] + df['blue_vol'])
+
+#yellow step
+for i in range(24):
+    if df.loc[i, 'yellow_vol'] > 0:
+        dispenser.dispense_between(
+            source_location="reservoir_12",
+            source_index=0,
+            dest_location="well_plate",
+            dest_index=i,
+            transfer_vol=df.loc[i, 'yellow_vol'],
+            air_time=0.5,
+            buffer_time=1,
+            speed=actuator_power
+        )
+        print(f"Dispensed yellow to well {i}")
+
+dispenser.dispense_condition(
+    source_location="reservoir_12",
+    source_index=4,  # Assuming index 1 is for water
+    dest_location="reservoir_12",  # Waste location
+    dest_index=5,  # waste index
+    vol_pipet=1,  # water volume
+    air_time=0.7,
+    buffer_time=1,
+    speed=actuator_power
+)
+
+dispenser.rinse_needle(wash_location="reservoir_12", wash_index=4)
+
+# BLUE step
+for i in range(24):
+    if df.loc[i, 'blue_vol'] > 0:
+        dispenser.dispense_between(
+            source_location="reservoir_12",
+            source_index=1,
+            dest_location="well_plate",
+            dest_index=i,
+            transfer_vol=df.loc[i, 'blue_vol'],
+            air_time=0.5,
+            buffer_time=1,
+            speed=actuator_power
+        )
+        print(f"Dispensed blue to well {i}")
+
+dispenser.dispense_condition(
+    source_location="reservoir_12",
+    source_index=4,  # Assuming index 1 is for water
+    dest_location="reservoir_12",  # Waste location
+    dest_index=6,  # waste index
+    vol_pipet=1,  # water volume
+    air_time=0.7,
+    buffer_time=1,
+    speed=actuator_power
+)
+
+dispenser.rinse_needle(wash_location="reservoir_12", wash_index=4)
+
+# WATER step 
+for i in range(24):
+    if df.loc[i, 'water_vol'] > 0:
+        dispenser.dispense_between(
+            source_location="reservoir_12",
+            source_index=3,
+            dest_location="well_plate",
+            dest_index=i,
+            transfer_vol=df.loc[i, 'water_vol'],
+            air_time=0.5,
+            buffer_time=1,
+            speed=actuator_power
+        )
+        print(f"Dispensed water to well {i}")
+    else:
+        print(f"No water needed for well {i}")
+
+# Capture images and compute average RGB values
+# for i in range(24):
+
+#     try:
+#         r, g, b = dispenser.get_image_rgb("well_plate", i, f"_{i}")
+#         # Add RGB values to the existing DataFrame
+#         df.loc[i, 'Red'] = r
+#         df.loc[i, 'Green'] = g
+#         df.loc[i, 'Blue'] = b
+
+#     except Exception as e:
+#         if not virtual:
+#             workflow_logger.error(f"Cannot capture image for well {i}: {e}")
+#         continue
+    
+#     #dispenser.gif_maker()
+
+#     dispenser.camera.cleanup()
+
+# # Save DataFrame to CSV
+# if not virtual:
+#     print (df)
+#     output_csv = "well_plate_data.csv"
+#     df.to_csv(os.path.join(output_dir,output_csv), index=False) 
+#     # Save DataFrame to CSV
+#     print(f"Data saved to {output_csv}")

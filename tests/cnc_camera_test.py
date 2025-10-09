@@ -18,29 +18,36 @@ dispenser = Liquid_Dispenser(cnc_comport="COM4",
                              output_dir=output_dir)
 dispenser.cnc_machine.Z_LOW_BOUND = -70 #Just in this case
 
-dispenser.cnc_machine.home()
+#dispenser.cnc_machine.home()
 
-df = pd.DataFrame()
+#df = pd.DataFrame()
 
-for i in range(12):
-    try:
-        r, g, b = dispenser.get_image_rgb("well_plate_camera", i, f"_{i}")
-        # Add RGB values to the existing DataFrame
-        df.loc[i, 'Red'] = r
-        df.loc[i, 'Green'] = g
-        df.loc[i, 'Blue'] = b
+# for i in range(12):
+#     try:
+#         r, g, b = dispenser.get_image_rgb("well_plate_camera", i, f"_{i}", square_size=75)
+#         # Add RGB values to the existing DataFrame
+#         df.loc[i, 'Red'] = r
+#         df.loc[i, 'Green'] = g
+#         df.loc[i, 'Blue'] = b
 
-    except Exception as e:
-        if not virtual:
-            print(f"Cannot capture image for well {i}: {e}")
-        continue
+#     except Exception as e:
+#         if not virtual:
+#             print(f"Cannot capture image for well {i}: {e}")
+#         continue
 
-    dispenser.camera.cleanup()
+
+for i in range(1):
+    dispenser.get_image_rgb("well_plate_camera", 0, f"_{i}", square_size=75)
+
 
 # Save DataFrame to CSV
-if not virtual:
-    print (df)
-    output_csv = "well_plate_data.csv"
-    df.to_csv(os.path.join(output_dir,output_csv), index=False) 
-    # Save DataFrame to CSV
-    print(f"Data saved to {output_csv}")
+# if not virtual:
+#     print (df)
+#     output_csv = "well_plate_data.csv"
+#     df.to_csv(os.path.join(output_dir,output_csv), index=False) 
+#     # Save DataFrame to CSV
+#     print(f"Data saved to {output_csv}")
+
+#closing
+dispenser.cnc_machine.close()
+dispenser.camera.cleanup()

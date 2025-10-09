@@ -35,4 +35,4 @@ def send_slack_message(message, channel_id):
     except SlackApiError as e:
         logging.error(f"❌ Slack API Error: {e.response['error']}")
 
-send_slack_message("Hello from the actuator-dispenser!", SLACK_CHANNEL)
+#send_slack_message("Hello from the actuator-dispenser!", SLACK_CHANNEL)

@@ -14,7 +14,8 @@ cnc = CNC_Machine(com = "COM4:", z_low_bound=-70)
 #     cnc.move_to_location('well_plate', i, safe = False) #move to each well plate spot
 
 cnc.home()
-cnc.move_to_location('reservoir_12', 0, safe=True)
+#cnc.move_to_location('reservoir_12', 0, safe=True)
+cnc.move_to_location('well_plate', 23, safe=True)
 # for i in range(0,12):
 #     cnc.move_to_location('reservoir_12', i, safe=True)
 #     input("Press enter to go to next slot:")

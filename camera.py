@@ -61,6 +61,7 @@ class Camera:
                 self.cap = cv2.VideoCapture(camera_index, cv2.CAP_DSHOW)
                 self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
                 self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
+                self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1) #minimize buffering
                 
                 # Warm-up camera
                 self.logger.debug("Warming up camera...")
@@ -101,7 +102,7 @@ class Camera:
                 ret, _ = self.cap.read()
                 if not ret:
                     self.logger.warning("Stabilization frame %d failed", i+1)
-                time.sleep(0.1)
+                time.sleep(0.2)
             
             # Capture the actual frame
             ret, frame = self.cap.read()
@@ -134,7 +135,7 @@ class Camera:
         else:
             self.logger.warning("No camera to release")
 
-    def average_rgb_in_center(self, image_path, square_size=100, show_crop=True, save_crop=True, crop_folder="center_crops"):
+    def average_rgb_in_center(self, image_path, square_size=100, show_crop=True, save_crop=True, crop_folder="center_crops", rgba = False):
         """
         Calculate the average RGB values in the center square of an image.
         
@@ -169,8 +170,12 @@ class Camera:
             arr = np.array(cropped)
 
             # Compute average RGB over the cropped area
-            avg_rgb = tuple(np.mean(arr, axis=(0, 1)))
-            self.logger.info("Average RGB calculated: (%.1f, %.1f, %.1f)", *avg_rgb)
+            if rgba == False: 
+                avg_rgb = tuple(np.mean(arr, axis=(0, 1)[:3])) #slice to only get the rgb values
+                self.logger.info("Average RGB calculated: (%.1f, %.1f, %.1f)", *avg_rgb)
+            else: 
+                avg_rgb = tuple(np.mean(arr, axis=(0, 1))) #already gets alpha value too
+                self.logger.info("Average RGBA calculated: (%.1f, %.1f, %.1f, %.1f)", *avg_rgb)
 
             # Save the cropped image automatically
             if save_crop:

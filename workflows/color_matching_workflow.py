@@ -31,21 +31,25 @@ from color_matching_optimizer import initialize_campaign, get_initial_recommenda
 import pandas as pd
 import numpy as np
 import time
+import logging
 
 from datetime import datetime
 
 # Workflow configuration
 INITIAL_BATCH_SIZE = 5  # First batch of wells to create
 SUBSEQUENT_BATCH_SIZE = 3  # Size of subsequent batches
-MAX_WELLS = 24  # Maximum number of wells on plate
+MAX_WELLS = 14  # Maximum number of wells on plate
 TARGET_WELL = 0  # Well containing the target sample
 RANDOM_SEED = 42
+RGBA = False
+
+VIRTUAL = False
 
 # Reservoir mapping
 RESERVOIRS = {
     'R': 0,      # Red colorant
-    'Y': 1,      # Yellow colorant  
-    'B': 2,      # Blue colorant
+    'B': 1,      # Yellow colorant  
+    'Y': 2,      # Blue colorant
     'Water': 3,  # Water/diluent
     'wash': 4,   # Wash solution
     'waste': 5   # Waste container
@@ -55,13 +59,13 @@ def rgb_distance(rgb1, rgb2):
     """Calculate Euclidean distance between two RGB colors."""
     return np.sqrt(sum((c1 - c2) ** 2 for c1, c2 in zip(rgb1, rgb2)))
 
-def volumes_to_milliliters(volumes_dict, total_volume_ml=0.240):
+def volumes_to_milliliters(volumes_dict, total_volume_ml=3.0):
     """
     Convert optimizer volume units to milliliters.
     
     Args:
         volumes_dict: Dictionary with volume ratios from optimizer
-        total_volume_ml: Total volume to dispense in milliliters (default 240μL = 0.240mL)
+        total_volume_ml: Total volume to dispense in milliliters (default = 1.0 mL)
         
     Returns:
         Dictionary with volumes in milliliters
@@ -86,18 +90,44 @@ def create_mixture_at_well(dispenser, well_index, volumes_ml, logger):
     """
     logger.info(f"Creating mixture at well {well_index} with volumes: {volumes_ml}")
     
+    # Find the last component with volume > 0 -> will mix after dispense
+    last_component = None
+    for component in reversed(list(volumes_ml.keys())):
+        if volumes_ml[component] > 0 and component in RESERVOIRS:
+            last_component = component
+            break
+
     # Dispense each component
     for component, volume_ml in volumes_ml.items():
         if volume_ml > 0 and component in RESERVOIRS:
             reservoir_index = RESERVOIRS[component]
             logger.info(f"Dispensing {volume_ml:.3f}mL of {component} from reservoir {reservoir_index}")
-            
+
+            dispenser.condition_needle(
+                source_location="reservoir_12", 
+                source_index=reservoir_index,
+                dest_location="reservoir_12",
+                dest_index=RESERVOIRS["waste"],
+                num_conditions = 1)
+
+            if component == last_component:
+                dispense_mix_volume=0.5
+            else:
+                dispense_mix_volume=0
+
             dispenser.dispense_between(
-                source_location="reservoir",
+                source_location="reservoir_12",
                 source_index=reservoir_index,
                 dest_location="well_plate", 
                 dest_index=well_index,
-                vol_pipet=volume_ml  # Now in mL as expected
+                transfer_vol=volume_ml,  # Now in mL as expected
+                mixing_vol=dispense_mix_volume,
+            )
+
+            dispenser.rinse_needle(
+                wash_location="reservoir_12", 
+                wash_index=RESERVOIRS['wash'], 
+                num_mixes=3
             )
             
             # Small delay between dispenses
@@ -110,9 +140,9 @@ def condition_system(dispenser, logger):
     logger.info("Conditioning system between wash and waste")
     
     dispenser.dispense_condition(
-        source_location="reservoir",
+        source_location="reservoir_12",
         source_index=RESERVOIRS['wash'],
-        dest_location="reservoir",
+        dest_location="reservoir_12",
         dest_index=RESERVOIRS['waste']
     )
 
@@ -128,22 +158,33 @@ def main():
     # Initialize hardware (virtual mode for testing)
     logger.info("Initializing hardware...")
     dispenser = Liquid_Dispenser(
-        cnc_comport="COM3", 
-        actuator_comport="COM7",
-        virtual=True  # Set to False for real hardware
+        cnc_comport="COM4", 
+        actuator_comport="COM3",
+        virtual=VIRTUAL,  # Set to False for real hardware
+        camera_index=1, 
+        log_level=logging.INFO
     )
     dispenser.cnc_machine.Z_LOW_BOUND = -70  # Adjust as needed
     dispenser.cnc_machine.home() #Home machine
-    
+
     if not dispenser.virtual:
         import slack_agent
-        slack_agent.send_message("Color Matching Workflow started on real hardware.")
+        secrets = slack_agent.load_secrets()
+
+        SLACK_BOT_TOKEN = secrets["SLACK_BOT_TOKEN"]
+        SLACK_WEBHOOK_URL = secrets["SLACK_WEBHOOK_URL"]
+        SLACK_CHANNEL = "C09J10VQ02C"
+        slack_agent.send_slack_message("Color Matching Workflow started on real hardware.", SLACK_CHANNEL)
 
     try:
         # Step 1: Read target RGB from well 0
         logger.info("Step 1: Reading target RGB values from sample at well 0")
-        target_rgb = dispenser.get_image_rgb("well_plate", TARGET_WELL, "target_sample")
-        logger.info(f"Target RGB values: R={target_rgb[0]}, G={target_rgb[1]}, B={target_rgb[2]}")
+        target_rgb = dispenser.get_image_rgb("well_plate_camera", TARGET_WELL, "target_sample", square_size=60, rgba = RGBA)
+        
+        if RGBA:
+            logger.info(f"Target RGB values: R={target_rgb[0]}, G={target_rgb[1]}, B={target_rgb[2]}, alpha={target_rgb[3]}")
+        else:
+            logger.info(f"Target RGB values: R={target_rgb[0]}, G={target_rgb[1]}, B={target_rgb[2]}")
         
         # Calculate upper bound for optimization (max possible distance)
         max_distance = rgb_distance([0, 0, 0], [255, 255, 255])  # Max possible RGB distance
@@ -185,7 +226,7 @@ def main():
             create_mixture_at_well(dispenser, current_well, volumes_ml, logger)
             
             # Condition system after each mixture
-            condition_system(dispenser, logger)
+            #condition_system(dispenser, logger)
             
             # Store experiment details
             results_data.append({
@@ -211,17 +252,23 @@ def main():
             well_idx = result['well']
             logger.debug(f"Analyzing RGB for well {well_idx}")
             
-            well_rgb = dispenser.get_image_rgb("well_plate", well_idx, f"experiment_{well_idx}")
+            well_rgb = dispenser.get_image_rgb("well_plate_camera", well_idx, f"experiment_{well_idx}", square_size=60, rgba = RGBA)
             result['measured_R'] = well_rgb[0]
             result['measured_G'] = well_rgb[1] 
             result['measured_B'] = well_rgb[2]
+
+            if RGBA:
+                result['measured_alpha'] = well_rgb[3]
             
             # Calculate distance to target (this is what we want to minimize)
             distance = rgb_distance(target_rgb, well_rgb)
             results_list.append(distance)  # Store for adding to suggestions DataFrame
             result['output'] = distance  # Store in our tracking data
             
-            logger.info(f"Well {well_idx}: RGB=({well_rgb[0]:.0f}, {well_rgb[1]:.0f}, {well_rgb[2]:.0f}), Distance={distance:.1f}")
+            if RGBA == False:
+                logger.info(f"Well {well_idx}: RGB=({well_rgb[0]:.0f}, {well_rgb[1]:.0f}, {well_rgb[2]:.0f}), Distance={distance:.1f}")
+            else:
+                logger.info(f"Well {well_idx}: RGBA=({well_rgb[0]:.0f}, {well_rgb[1]:.0f}, {well_rgb[2]:.0f}), {well_rgb[3]:.0f}), Distance={distance:.1f}")
         
         # Add results to the suggestions dataframe (this is what the optimizer expects)
         initial_suggestions['output'] = results_list
@@ -263,7 +310,6 @@ def main():
                 
                 # Create mixture
                 create_mixture_at_well(dispenser, current_well, volumes_ml, logger)
-                condition_system(dispenser, logger)
                 
                 # Store results
                 batch_result = {
@@ -286,11 +332,14 @@ def main():
             
             for i, result in enumerate(batch_results):
                 well_idx = result['well'] 
-                well_rgb = dispenser.get_image_rgb("well_plate", well_idx, f"experiment_{well_idx}")
+                well_rgb = dispenser.get_image_rgb("well_plate_camera", well_idx, f"experiment_{well_idx}", square_size=60, rgba=RGBA)
                 
                 result['measured_R'] = well_rgb[0]
                 result['measured_G'] = well_rgb[1]
                 result['measured_B'] = well_rgb[2]
+
+                if RGBA:
+                    result['measured_alpha'] = well_rgb[3]
                 
                 distance = rgb_distance(target_rgb, well_rgb)
                 result['output'] = distance
@@ -343,7 +392,7 @@ def main():
         dispenser.move_to_origin()
 
     if not dispenser.virtual:
-        slack_agent.send_message("Color Matching Workflow finished on real hardware.")
+        slack_agent.send_slack_message("Color Matching Workflow finished on real hardware.", SLACK_CHANNEL)
 
 if __name__ == "__main__":
     main()
