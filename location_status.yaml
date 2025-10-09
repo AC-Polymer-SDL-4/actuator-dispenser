@@ -6,6 +6,14 @@ vial_rack: #Array-location
   z_origin: 0
   x_offset: 37 #Measure with caliper
   y_offset: -32 #MEasure with caliper
+reservoir_12: #Array-location
+  num_x: 1 #Rows
+  num_y: 12 #Columns
+  x_origin: 97.0 #move the cnc machine with the needle attached, and find the position 
+  y_origin: 102.0
+  z_origin: 0 #EDIT!!!
+  x_offset: 0 #Measure with caliper
+  y_offset: -8.92 #MEasure with caliper
 well_plate: #Array-location
   num_x: 4 #Rows
   num_y: 6 #Columns
@@ -19,7 +27,7 @@ well_plate_camera: #Array-location
   num_y: 6 #Columns
   x_origin: 166.000 #move the cnc machine with the needle attached, and find the position 
   y_origin: 140.000
-  z_origin: -30.000
+  z_origin: -10
   x_offset: 20 #Measure with caliper
   y_offset: -20 #MEasure with caliper
 reservoir: #Array-location for color reservoirs
