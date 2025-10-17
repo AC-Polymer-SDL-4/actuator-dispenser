@@ -5,6 +5,10 @@ from actuator_controller import ActuatorRemote
 from camera import Camera
 from log_config import setup_logger, log_method_entry, log_method_exit, log_virtual_action
 import time
+import os
+import cv2
+import numpy as np
+import colorsys
 
 class Liquid_Dispenser:
     """
@@ -73,7 +77,7 @@ class Liquid_Dispenser:
             raise
 
     def dispense_between(self, source_location, source_index, dest_location, dest_index, 
-                        transfer_vol, air_time=0.7, buffer_time=1, speed=32768, mixing_vol = 0, num_mixes=3):
+                        transfer_vol, air_time=0.7, blowout_vol = 0.28, buffer_time=1, speed=32768, mixing_vol = 0, num_mixes=3):
         """
         Transfer liquid from a source location to a destination location,
         with optional mixing. Also supports mixing-only without transfer by setting transfer_vol = 0.
@@ -93,38 +97,43 @@ class Liquid_Dispenser:
             dest_index (int): Index within destination location
             transfer_vol (float): Total volume to transfer in mL (0 for mixing-only)
             air_time (float): Time to aspirate air buffer in seconds
+            blowout_vol (float): Volume of air (mL) to aspirate/dispense for a blowout effect
             buffer_time (float): Extra time for complete dispensing in seconds
             speed (int): Actuator speed (0-65535)
             mixing_vol (int): (float): Volume to use during mixing (mL) (0 if no mixing)
             num_mixes (int): Number of mixing cycles to perform
         """
         # Volume calculation constants
-        max_vol = 0.5  # Maximum volume per dispense in mL (hardware limitation)
-        slope = 0.4295  # Time per mL conversion factor (seconds/mL, from calibration)
-        
+        SYRINGE_MAX_VOL = 0.78
+        transfer_max_vol = SYRINGE_MAX_VOL-blowout_vol  # Maximum volume per dispense in mL (hardware limitation)
+        SLOPE = 0.4003  # Time per mL conversion factor (seconds/mL, from calibration), before: 0.4295
+        min_vol = 0.025
+        air_time = blowout_vol/SLOPE #air_time for blow out
+
         self.logger.info(
             "Starting dispense_between: %s[%d] -> %s[%d], transfer volume=%.3f mL, mixing volume=%.3f", 
             source_location, source_index, dest_location, dest_index, transfer_vol, mixing_vol
         )
         
-        if  transfer_vol <= 0.025 and transfer_vol != 0: #min volume
+        if  transfer_vol < min_vol and transfer_vol != 0: #min volume
             self.logger.warning("Invalid transfer volume requested: %.3f mL", transfer_vol)
-            return
+            return 
         if  mixing_vol <= 0.025 and mixing_vol != 0: #min volume
             self.logger.warning("Invalid mixing volume requested: %.3f mL", mixing_vol)
             return
         if transfer_vol == 0 and mixing_vol == 0:
-            self.logger.info("Nothing to do: both transfer and mixing volumes are zero.")
+            self.logger.warning("Nothing to do: both transfer and mixing volumes are zero.")
             return
             
         
         if transfer_vol > 0:
         # Calculate how many dispense cycles we need
-            num_dispenses = math.ceil(transfer_vol / max_vol)
+            num_dispenses = math.ceil(transfer_vol / transfer_max_vol)
             dispense_vol = transfer_vol / num_dispenses  # Volume per individual dispense
-            retract_time = dispense_vol * slope  # Time needed to aspirate this volume
+            retract_time = dispense_vol/SLOPE  # Time needed to aspirate this volume
             
-            if transfer_vol > max_vol * 10:  # Reasonable upper limit
+            
+            if transfer_vol > (transfer_max_vol * 10):  # Reasonable upper limit
                 self.logger.warning("Large volume requested (%.3f mL) will require %d dispenses", transfer_vol, num_dispenses)
                 return 
             
@@ -134,8 +143,8 @@ class Liquid_Dispenser:
             retract_time = 0
         
         self.logger.debug(
-            "Dispense calculations: total_vol=%.3f, max_vol=%.3f, num_dispenses=%d, vol_per_dispense=%.3f, retract_time=%.2f",
-            transfer_vol, max_vol, num_dispenses, dispense_vol, retract_time
+            "Dispense calculations: total_vol=%.3f, transfer_max_vol=%.3f, num_dispenses=%d, vol_per_dispense=%.3f, retract_time=%.2f",
+            transfer_vol, transfer_max_vol, num_dispenses, dispense_vol, retract_time
         )
         
         #start dispense
@@ -152,14 +161,15 @@ class Liquid_Dispenser:
                     self.cnc_machine.move_to_location(source_location, source_index, safe=True)
                     
                     self.logger.debug("Aspirating air buffer: %.2f seconds", air_time)
-                    self.actuator.retract(air_time, speed=speed)
+                    self.actuator.retract(air_time)
                     
                     self.logger.debug("Moving down to aspirate liquid")
-                    #self.cnc_machine.move_to_point(z=-64) #for reservoir_12
                     self.cnc_machine.move_to_aspirate_height(source_location)
                     
                     self.logger.debug("Aspirating liquid: %.2f seconds (%.3f mL)", retract_time, dispense_vol)
-                    self.actuator.retract(retract_time, speed=speed)
+                    self.actuator.retract(retract_time)
+
+                    time.sleep(0.5) #wait 1 second before moving up
                     
                     self.logger.debug("Moving up from source")
                     self.cnc_machine.move_to_point(z=0)
@@ -168,18 +178,14 @@ class Liquid_Dispenser:
                     self.logger.debug("Moving to destination: %s[%d]", dest_location, dest_index)
                     self.cnc_machine.move_to_location(dest_location, dest_index, safe=True)
                     self.cnc_machine.move_to_dispense_height(dest_location)
-                    # if dest_location == "reservoir_12":
-                    #     self.cnc_machine.move_to_point(z=-10) #for reservoir_12
-                    # elif dest_location == "well_plate":
-                    #     self.cnc_machine.move_to_point(z=-20) #24 wellplate
                     
                     total_dispense_time = air_time + retract_time + buffer_time
                     self.logger.debug("Dispensing liquid: %.2f seconds total", total_dispense_time)
-                    self.actuator.extend(total_dispense_time, speed=speed)
+                    self.actuator.extend(total_dispense_time)
 
-            if mixing_vol > 0 and num_mixes > 0: #mixing
-                retract_time_mixing = mixing_vol * slope  # Time needed to aspirate this volume (no air gap though)
-                total_dispense_time = air_time + retract_time + buffer_time
+            if mixing_vol > 0 and num_mixes > 0 and mixing_vol <= transfer_max_vol: #mixing
+                retract_time_mixing = mixing_vol / SLOPE  # Time needed to aspirate this volume (no air gap though)
+                total_dispense_time = air_time + retract_time_mixing + buffer_time
 
                  # Move to source and aspirate
                 self.logger.debug("Moving to destination location for mixing: %s[%d]", dest_location, dest_index)
@@ -189,19 +195,14 @@ class Liquid_Dispenser:
                 self.actuator.retract(air_time, speed=speed)
                 
                 self.logger.debug("Moving down to aspirate liquid")
-                #self.cnc_machine.move_to_point(z=-64) #for reservoir_12
                 self.cnc_machine.move_to_mixing_height(dest_location)
 
                 for mix_cycle in range(num_mixes):  
                     self.logger.debug("Mix cycle %d/3", mix_cycle + 1)
                     self.actuator.retract(seconds=retract_time_mixing, speed=speed)  # Retract to mix
-
+                    time.sleep(0.5)
                     
                     if mix_cycle == num_mixes -1:
-                        # if dest_location == "reservoir_12": 
-                        #     self.cnc_machine.move_to_point(z=-10)
-                        # elif dest_location == "well_plate":
-                        #     self.cnc_machine.move_to_point(z=-20)
                         self.logger.debug("Moving up to dispense all liquid and air buffer")
                         self.cnc_machine.move_to_dispense_height(dest_location)
 
@@ -211,15 +212,18 @@ class Liquid_Dispenser:
                     else:
                         self.logger.debug("Dispensing liquid: %.2f seconds total", retract_time)
                         self.actuator.extend(seconds=retract_time_mixing, speed=speed)  # mixing only (keeping air buffer)
+                    
+                    time.sleep(0.5)
+                    
+                    self.logger.info("Mixing complete")
 
+            else:
+                self.logger.warning("Volume (%.2f mL) exceeds maximum amount for mixing.", mixing_vol)
+            
             self.logger.debug("Moving up after liquid transfer")
             self.cnc_machine.move_to_point(z=0)  # Move back up
-                    
-
-            if transfer_vol == 0 and mixing_vol>0: #mixing only
-                self.logger.info("Mixing complete")
-            else:       
-                self.logger.info("Dispense operation completed successfully")
+                          
+            self.logger.info("Dispense operation completed successfully")
             
         except Exception as e:
             self.logger.error("Dispense operation failed: %s", e)
@@ -270,7 +274,7 @@ class Liquid_Dispenser:
         """
         # Volume calculation constants
         max_vol = 0.5  # Maximum volume per dispense in mL
-        slope = 0.4295  # Time per mL conversion factor (seconds/mL)
+        slope = 0.4003  # Time per mL conversion factor (seconds/mL) before: 0.4295
         
         self.logger.info(
             "Starting conditioning: %s[%d] -> %s[%d], volume=%.3f mL", 
@@ -345,34 +349,24 @@ class Liquid_Dispenser:
             self.logger.error("Failed to move to origin: %s", e)
             raise
 
-    def get_image_rgb(self, location, location_index, image_suffix, square_size=100, rgba=False):
+    def get_image_rgb(self, location, location_index, image_suffix, square_size=100, rgba=False, color_space='RGB'):
         """
-        Capture an image at a specific location and analyze its RGB values.
-        
-        In virtual mode, returns simulated RGB values for testing.
-        In real mode:
-        1. Moves the CNC to the specified location
-        2. Captures an image using the camera
-        3. Analyzes the center region for average RGB values
-        
-        Args:
-            location (str): Location name to move to (e.g., "well_plate")
-            location_index (int): Index within the location
-            image_suffix: Suffix for the image filename
-            square_size (int): Size of center square for RGB analysis
-            
-        Returns:
-            tuple: Average RGB values (R, G, B) or None if capture failed
+        Capture an image at a specific location and analyze its color values.
+
+        Supports returning averages in RGB, RGBA, HSV, or LAB depending on the
+        `color_space` argument. In virtual mode this returns synthetic values
+        converted into the requested space; in real mode the camera is used and
+        `camera.average_rgb_in_center(..., color_space=...)` is called.
         """
         self.logger.info(
-            "Capturing image at %s[%d] with suffix '%s'", 
-            location, location_index, image_suffix
+            "Capturing image at %s[%d] with suffix '%s' (color_space=%s)",
+            location, location_index, image_suffix, color_space
         )
-        
+
         # Handle virtual mode with dummy RGB values
         if self.virtual:
             import random
-            
+
             # Provide realistic dummy values for different scenarios
             if location_index == 0 and location == "well_plate":
                 # Target sample - use a consistent "target" color (purple-ish)
@@ -380,50 +374,84 @@ class Liquid_Dispenser:
                 self.logger.info("[VIRTUAL] Using target sample RGB: (%.1f, %.1f, %.1f)", *dummy_rgb)
             else:
                 # Experimental wells - generate varied colors with some randomness
-                # but keep them in realistic ranges for color mixing
                 base_r = random.randint(80, 180)
-                base_g = random.randint(60, 160) 
+                base_g = random.randint(60, 160)
                 base_b = random.randint(70, 170)
-                
+
                 if rgba:
                     base_a = random.randint(10, 150)
                     dummy_rgb = (base_r, base_g, base_b, base_a)
-                    self.logger.info("[VIRTUAL] Using simulated RGB: (%.1f, %.1f, %.1f, %.1f)", *dummy_rgb)
-            
-
+                    self.logger.info("[VIRTUAL] Using simulated RGBA: (%.1f, %.1f, %.1f, %.1f)", *dummy_rgb)
                 else:
                     dummy_rgb = (base_r, base_g, base_b)
                     self.logger.info("[VIRTUAL] Using simulated RGB: (%.1f, %.1f, %.1f)", *dummy_rgb)
-            
 
-
-                
+            # Convert dummy_rgb into requested color space when virtual
+            cs = color_space.upper()
+            if cs == 'RGB':
+                return dummy_rgb
+            if cs == 'RGBA':
+                if len(dummy_rgb) == 3:
+                    return (dummy_rgb[0], dummy_rgb[1], dummy_rgb[2], 255)
+                return dummy_rgb
+            if cs == 'HSV':
+                # colorsys returns H in 0..1
+                r, g, b = [x / 255.0 for x in dummy_rgb[:3]]
+                h, s, v = colorsys.rgb_to_hsv(r, g, b)
+                return (h * 360.0, s, v)
+            if cs == 'LAB':
+                pa = np.uint8([[[int(dummy_rgb[0]), int(dummy_rgb[1]), int(dummy_rgb[2])]]])
+                lab = cv2.cvtColor(pa, cv2.COLOR_RGB2LAB)[0, 0].astype(float)
+                return (float(lab[0]), float(lab[1]), float(lab[2]))
             return dummy_rgb
-        
+
         # Real hardware mode
         try:
             # Move to the specified location for imaging
             self.logger.debug("Moving to imaging position")
             self.cnc_machine.move_to_location(location, location_index)
-            
-            # Capture and save the image
+
+            # Capture and save the image (full frame)
             self.logger.debug("Capturing image")
             image_path = self.camera.capture_and_save(image_suffix)
-            
+
             if image_path is not None:
-                # Analyze the captured image for RGB values
-                self.logger.debug("Analyzing image for RGB values")
-                rgb = self.camera.average_rgb_in_center(image_path, square_size, 
-                                                       show_crop=True, save_crop=False, rgba=rgba)
-                if rgba == False:
-                    self.logger.info("RGB analysis completed: (%.1f, %.1f, %.1f)", *rgb)
-                else:
-                    self.logger.info("RGBA analysis completed: (%.1f, %.1f, %.1f, %.1f)", *rgb)
-                return rgb
+                # Analyze the captured image for values in the requested color space and
+                # save the center crop
+                try:
+                    self.logger.debug("Analyzing image for color values")
+                    rgb = self.camera.average_rgb_in_center(
+                        image_path, square_size,
+                        show_crop=True, save_crop=True, rgba=rgba, color_space=color_space
+                    )
+                    # Log nicely depending on color_space
+                    cs = color_space.upper()
+                    if cs in ('RGB', 'RGBA'):
+                        self.logger.info("Color analysis completed: %s", str(rgb))
+                    elif cs == 'HSV':
+                        self.logger.info("HSV analysis completed: H=%.1f S=%.3f V=%.3f", rgb[0], rgb[1], rgb[2])
+                    elif cs == 'LAB':
+                        self.logger.info("LAB analysis completed: L=%.2f a=%.2f b=%.2f", rgb[0], rgb[1], rgb[2])
+
+                    # Remove the full-frame file; keep only the saved crop. Only attempt
+                    # to remove if camera is not virtual and the file exists.
+                    try:
+                        if not getattr(self.camera, 'virtual', False) and os.path.exists(image_path):
+                            os.remove(image_path)
+                            self.logger.debug("Removed full image file: %s", image_path)
+                    except Exception:
+                        self.logger.warning("Failed to remove full image file: %s", image_path)
+
+                    return rgb
+
+                except Exception:
+                    # If processing failed, leave the original image for inspection
+                    self.logger.exception("Failed to process captured image")
+                    raise
             else:
                 self.logger.error("Image capture failed")
                 return None
-                
+
         except Exception as e:
             self.logger.error("Image capture and analysis failed: %s", e)
             return None

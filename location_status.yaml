@@ -30,7 +30,7 @@ well_plate: #Array-location
   y_offset: -20 #MEasure with caliper
   aspirate_height: none
   dispense_height: -25
-  mixing_height: -55
+  mixing_height: -50
 well_plate_camera: #Array-location
   num_x: 4 #Rows
   num_y: 6 #Columns
