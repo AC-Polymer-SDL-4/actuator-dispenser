@@ -32,13 +32,13 @@ import pandas as pd
 import numpy as np
 import time
 import logging
-
-from datetime import datetime
+import os
+import datetime
 
 # Workflow configuration
 INITIAL_BATCH_SIZE = 5  # First batch of wells to create
 SUBSEQUENT_BATCH_SIZE = 3  # Size of subsequent batches
-MAX_WELLS = 14  # Maximum number of wells on plate
+MAX_WELLS = 24  # Maximum number of wells on plate
 TARGET_WELL = 0  # Well containing the target sample
 RANDOM_SEED = 42
 RGBA = False
@@ -55,11 +55,17 @@ RESERVOIRS = {
     'waste': 5   # Waste container
 }
 
+
+# Get workflow name (file name without extension)
+workflow_name = os.path.splitext(os.path.basename(__file__))[0]
+timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+output_dir = os.path.join("output", workflow_name, timestamp)
+
 def rgb_distance(rgb1, rgb2):
     """Calculate Euclidean distance between two RGB colors."""
     return np.sqrt(sum((c1 - c2) ** 2 for c1, c2 in zip(rgb1, rgb2)))
 
-def volumes_to_milliliters(volumes_dict, total_volume_ml=3.0):
+def volumes_to_milliliters(volumes_dict, total_volume_ml=1.0):
     """
     Convert optimizer volume units to milliliters.
     
@@ -103,15 +109,15 @@ def create_mixture_at_well(dispenser, well_index, volumes_ml, logger):
             reservoir_index = RESERVOIRS[component]
             logger.info(f"Dispensing {volume_ml:.3f}mL of {component} from reservoir {reservoir_index}")
 
-            dispenser.condition_needle(
-                source_location="reservoir_12", 
-                source_index=reservoir_index,
-                dest_location="reservoir_12",
-                dest_index=RESERVOIRS["waste"],
-                num_conditions = 1)
+            # dispenser.condition_needle(
+            #     source_location="reservoir_12", 
+            #     source_index=reservoir_index,
+            #     dest_location="reservoir_12",
+            #     dest_index=RESERVOIRS["waste"],
+            #     num_conditions = 1)
 
             if component == last_component:
-                dispense_mix_volume=0.5
+                dispense_mix_volume=0.3
             else:
                 dispense_mix_volume=0
 
@@ -159,10 +165,11 @@ def main():
     logger.info("Initializing hardware...")
     dispenser = Liquid_Dispenser(
         cnc_comport="COM4", 
-        actuator_comport="COM3",
+        actuator_comport="COM6",
         virtual=VIRTUAL,  # Set to False for real hardware
         camera_index=1, 
-        log_level=logging.INFO
+        log_level=logging.INFO,
+        output_dir=output_dir
     )
     dispenser.cnc_machine.Z_LOW_BOUND = -70  # Adjust as needed
     dispenser.cnc_machine.home() #Home machine
@@ -192,7 +199,7 @@ def main():
         # Initialize Bayesian optimization campaign
         logger.info("Initializing Bayesian optimization campaign...")
         campaign, searchspace = initialize_campaign(
-            upper_bound=max_distance,
+            upper_bound=50,
             random_seed=RANDOM_SEED,
             random_recs=False
         )
@@ -367,13 +374,43 @@ def main():
         logger.info(f"RGB: ({best_result['measured_R']}, {best_result['measured_G']}, {best_result['measured_B']})")
         logger.info(f"Recipe: R={best_result['R_volume_ml']:.3f}mL, Y={best_result['Y_volume_ml']:.3f}mL, B={best_result['B_volume_ml']:.3f}mL, Water={best_result['Water_volume_ml']:.3f}mL")
         
-        # Save results to CSV
-        results_df = pd.DataFrame(results_data)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        results_file = f"color_matching_results_{timestamp}.csv"
-        results_df.to_csv(results_file, index=False)
-        logger.info(f"Results saved to {results_file}")
-        
+        if not dispenser.virtual:
+            # Save results to CSV inside the workflow output directory
+            results_df = pd.DataFrame(results_data)
+
+            # Append the target RGB as an extra row at the end of the CSV.
+            # This does not modify any data structures used by the optimizer;
+            # it's only for record-keeping in the saved CSV.
+            try:
+                target_row = {}
+                for col in results_df.columns:
+                    if col == 'well':
+                        # mark the target well index (usually 0)
+                        target_row[col] = "Target"
+                    elif col == 'measured_R':
+                        target_row[col] = int(target_rgb[0])
+                    elif col == 'measured_G':
+                        target_row[col] = int(target_rgb[1])
+                    elif col == 'measured_B':
+                        target_row[col] = int(target_rgb[2])
+                    elif col == 'measured_alpha' and RGBA:
+                        target_row[col] = int(target_rgb[3])
+                    else:
+                        # fill other columns with NaN so columns align
+                        target_row[col] = np.nan
+
+                # concat the single-row DataFrame to the results
+                results_df = pd.concat([results_df, pd.DataFrame([target_row])], ignore_index=True)
+            except Exception:
+                logger.exception("Failed to append target RGB row; saving without it.")
+
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            # Ensure the output directory exists
+            os.makedirs(output_dir, exist_ok=True)
+            results_file = os.path.join(output_dir, f"color_matching_results_{timestamp}.csv")
+            results_df.to_csv(results_file, index=False)
+            logger.info(f"Results saved to {results_file}")
+
         # Summary statistics
         distances = [r['output'] for r in results_data]
         logger.info(f"Summary statistics:")
@@ -389,6 +426,7 @@ def main():
         
     finally:
         logger.info("Workflow completed. Moving to origin position.")
+        dispenser.cnc_machine.move_to_point(z=0)
         dispenser.move_to_origin()
 
     if not dispenser.virtual:

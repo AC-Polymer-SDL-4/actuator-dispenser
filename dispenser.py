@@ -6,9 +6,6 @@ from camera import Camera
 from log_config import setup_logger, log_method_entry, log_method_exit, log_virtual_action
 import time
 import os
-import cv2
-import numpy as np
-import colorsys
 
 class Liquid_Dispenser:
     """
@@ -349,24 +346,34 @@ class Liquid_Dispenser:
             self.logger.error("Failed to move to origin: %s", e)
             raise
 
-    def get_image_rgb(self, location, location_index, image_suffix, square_size=100, rgba=False, color_space='RGB'):
+    def get_image_rgb(self, location, location_index, image_suffix, square_size=100, rgba=False):
         """
-        Capture an image at a specific location and analyze its color values.
-
-        Supports returning averages in RGB, RGBA, HSV, or LAB depending on the
-        `color_space` argument. In virtual mode this returns synthetic values
-        converted into the requested space; in real mode the camera is used and
-        `camera.average_rgb_in_center(..., color_space=...)` is called.
+        Capture an image at a specific location and analyze its RGB values.
+        
+        In virtual mode, returns simulated RGB values for testing.
+        In real mode:
+        1. Moves the CNC to the specified location
+        2. Captures an image using the camera
+        3. Analyzes the center region for average RGB values
+        
+        Args:
+            location (str): Location name to move to (e.g., "well_plate")
+            location_index (int): Index within the location
+            image_suffix: Suffix for the image filename
+            square_size (int): Size of center square for RGB analysis
+            
+        Returns:
+            tuple: Average RGB values (R, G, B) or None if capture failed
         """
         self.logger.info(
-            "Capturing image at %s[%d] with suffix '%s' (color_space=%s)",
-            location, location_index, image_suffix, color_space
+            "Capturing image at %s[%d] with suffix '%s'", 
+            location, location_index, image_suffix
         )
-
+        
         # Handle virtual mode with dummy RGB values
         if self.virtual:
             import random
-
+            
             # Provide realistic dummy values for different scenarios
             if location_index == 0 and location == "well_plate":
                 # Target sample - use a consistent "target" color (purple-ish)
@@ -374,64 +381,46 @@ class Liquid_Dispenser:
                 self.logger.info("[VIRTUAL] Using target sample RGB: (%.1f, %.1f, %.1f)", *dummy_rgb)
             else:
                 # Experimental wells - generate varied colors with some randomness
+                # but keep them in realistic ranges for color mixing
                 base_r = random.randint(80, 180)
-                base_g = random.randint(60, 160)
+                base_g = random.randint(60, 160) 
                 base_b = random.randint(70, 170)
-
+                
                 if rgba:
                     base_a = random.randint(10, 150)
                     dummy_rgb = (base_r, base_g, base_b, base_a)
-                    self.logger.info("[VIRTUAL] Using simulated RGBA: (%.1f, %.1f, %.1f, %.1f)", *dummy_rgb)
+                    self.logger.info("[VIRTUAL] Using simulated RGB: (%.1f, %.1f, %.1f, %.1f)", *dummy_rgb)
+            
+
                 else:
                     dummy_rgb = (base_r, base_g, base_b)
                     self.logger.info("[VIRTUAL] Using simulated RGB: (%.1f, %.1f, %.1f)", *dummy_rgb)
+            
 
-            # Convert dummy_rgb into requested color space when virtual
-            cs = color_space.upper()
-            if cs == 'RGB':
-                return dummy_rgb
-            if cs == 'RGBA':
-                if len(dummy_rgb) == 3:
-                    return (dummy_rgb[0], dummy_rgb[1], dummy_rgb[2], 255)
-                return dummy_rgb
-            if cs == 'HSV':
-                # colorsys returns H in 0..1
-                r, g, b = [x / 255.0 for x in dummy_rgb[:3]]
-                h, s, v = colorsys.rgb_to_hsv(r, g, b)
-                return (h * 360.0, s, v)
-            if cs == 'LAB':
-                pa = np.uint8([[[int(dummy_rgb[0]), int(dummy_rgb[1]), int(dummy_rgb[2])]]])
-                lab = cv2.cvtColor(pa, cv2.COLOR_RGB2LAB)[0, 0].astype(float)
-                return (float(lab[0]), float(lab[1]), float(lab[2]))
+
+                
             return dummy_rgb
-
+        
         # Real hardware mode
         try:
             # Move to the specified location for imaging
             self.logger.debug("Moving to imaging position")
             self.cnc_machine.move_to_location(location, location_index)
-
+            
             # Capture and save the image (full frame)
             self.logger.debug("Capturing image")
             image_path = self.camera.capture_and_save(image_suffix)
 
             if image_path is not None:
-                # Analyze the captured image for values in the requested color space and
-                # save the center crop
+                # Analyze the captured image for RGB values and save the center crop
                 try:
-                    self.logger.debug("Analyzing image for color values")
-                    rgb = self.camera.average_rgb_in_center(
-                        image_path, square_size,
-                        show_crop=True, save_crop=True, rgba=rgba, color_space=color_space
-                    )
-                    # Log nicely depending on color_space
-                    cs = color_space.upper()
-                    if cs in ('RGB', 'RGBA'):
-                        self.logger.info("Color analysis completed: %s", str(rgb))
-                    elif cs == 'HSV':
-                        self.logger.info("HSV analysis completed: H=%.1f S=%.3f V=%.3f", rgb[0], rgb[1], rgb[2])
-                    elif cs == 'LAB':
-                        self.logger.info("LAB analysis completed: L=%.2f a=%.2f b=%.2f", rgb[0], rgb[1], rgb[2])
+                    self.logger.debug("Analyzing image for RGB values")
+                    rgb = self.camera.average_rgb_in_center(image_path, square_size,
+                                                           show_crop=True, save_crop=True, rgba=rgba)
+                    if rgba == False:
+                        self.logger.info("RGB analysis completed: (%.1f, %.1f, %.1f)", *rgb)
+                    else:
+                        self.logger.info("RGBA analysis completed: (%.1f, %.1f, %.1f, %.1f)", *rgb)
 
                     # Remove the full-frame file; keep only the saved crop. Only attempt
                     # to remove if camera is not virtual and the file exists.
@@ -451,7 +440,7 @@ class Liquid_Dispenser:
             else:
                 self.logger.error("Image capture failed")
                 return None
-
+                
         except Exception as e:
             self.logger.error("Image capture and analysis failed: %s", e)
             return None
