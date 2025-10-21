@@ -213,9 +213,9 @@ class Liquid_Dispenser:
                     time.sleep(0.5)
                     
                     self.logger.info("Mixing complete")
-
-            else:
-                self.logger.warning("Volume (%.2f mL) exceeds maximum amount for mixing.", mixing_vol)
+                
+            if mixing_vol > transfer_max_vol:
+                self.logger.warning("Mixing volume (%.3f mL) exceeds maximum per dispense (%.3f mL); skipping mixing", mixing_vol, transfer_max_vol)
             
             self.logger.debug("Moving up after liquid transfer")
             self.cnc_machine.move_to_point(z=0)  # Move back up
@@ -346,7 +346,7 @@ class Liquid_Dispenser:
             self.logger.error("Failed to move to origin: %s", e)
             raise
 
-    def get_image_rgb(self, location, location_index, image_suffix, square_size=100, rgba=False):
+    def get_image_color(self, location, location_index, image_suffix, square_size=100, color_space="RGB"):
         """
         Capture an image at a specific location and analyze its RGB values.
         
@@ -371,35 +371,48 @@ class Liquid_Dispenser:
         )
         
         # Handle virtual mode with dummy RGB values
-        if self.virtual:
-            import random
+        # if self.virtual:
+        #     import random
             
-            # Provide realistic dummy values for different scenarios
-            if location_index == 0 and location == "well_plate":
-                # Target sample - use a consistent "target" color (purple-ish)
-                dummy_rgb = (128, 64, 192)
-                self.logger.info("[VIRTUAL] Using target sample RGB: (%.1f, %.1f, %.1f)", *dummy_rgb)
-            else:
-                # Experimental wells - generate varied colors with some randomness
-                # but keep them in realistic ranges for color mixing
-                base_r = random.randint(80, 180)
-                base_g = random.randint(60, 160) 
-                base_b = random.randint(70, 170)
+        #     # Provide realistic dummy values for different scenarios
+        #     if location_index == 0 and location == "well_plate":
+        #         # Target sample - use a consistent "target" color (purple-ish)
+        #         dummy_rgb = (128, 64, 192)
+        #         self.logger.info("[VIRTUAL] Using target sample RGB: (%.1f, %.1f, %.1f)", *dummy_rgb)
+        #     else:
+        #         # Experimental wells - generate varied colors with some randomness
+        #         # but keep them in realistic ranges for color mixing
+        #         base_r = random.randint(80, 180)
+        #         base_g = random.randint(60, 160) 
+        #         base_b = random.randint(70, 170)
+
+        #         if color_space == "RGBA":
+        #             base_a = random.randint(10, 150)
+        #             dummy_color = {"R": base_r, "G": base_g, "B": base_b, "A": base_a}
+        #             self.logger.info("[VIRTUAL] Using simulated RGBA: (%.1f, %.1f, %.1f, %.1f)", *dummy_color.values())
+        #         elif color_space == "LAB":
+        #             # Simulate LAB values within typical ranges
+        #             L = random.randint(20, 80)   # Lightness
+        #             a = random.randint(-40, 40)  # Green-Red
+        #             b = random.randint(-40, 40)  # Blue-Yellow
+        #             dummy_color = {"L": L, "A": a, "B": b}
+        #             self.logger.info("[VIRTUAL] Using simulated LAB: (%.1f, %.1f, %.1f)", *dummy_color.values())
+        #         elif color_space == "HSV":
+        #             # Simulate HSV values within typical ranges
+        #             H = random.randint(0, 360)   # Hue
+        #             S = random.randint(40, 100)  # Saturation
+        #             V = random.randint(40, 100)  # Value
+        #             dummy_color = {"H": H, "S": S, "V": V}
+        #             self.logger.info("[VIRTUAL] Using simulated HSV: (%.1f, %.1f, %.1f)", *dummy_color.values())
+        #         elif color_space == "RGB":
+        #             dummy_color = {"R": base_r, "G": base_g, "B": base_b}
+        #             self.logger.info("[VIRTUAL] Using simulated RGB: (%.1f, %.1f, %.1f)", *dummy_color.values())
+        #         else:
+        #             self.logger.error("Unsupported color mode: %s", color_space)
+        #             raise ValueError(f"Unsupported color mode: {color_space}")
+
                 
-                if rgba:
-                    base_a = random.randint(10, 150)
-                    dummy_rgb = (base_r, base_g, base_b, base_a)
-                    self.logger.info("[VIRTUAL] Using simulated RGB: (%.1f, %.1f, %.1f, %.1f)", *dummy_rgb)
-            
-
-                else:
-                    dummy_rgb = (base_r, base_g, base_b)
-                    self.logger.info("[VIRTUAL] Using simulated RGB: (%.1f, %.1f, %.1f)", *dummy_rgb)
-            
-
-
-                
-            return dummy_rgb
+        #     return dummy_color
         
         # Real hardware mode
         try:
@@ -412,15 +425,20 @@ class Liquid_Dispenser:
             image_path = self.camera.capture_and_save(image_suffix)
 
             if image_path is not None:
-                # Analyze the captured image for RGB values and save the center crop
+                # Analyze the captured image for color values and save the center crop
                 try:
-                    self.logger.debug("Analyzing image for RGB values")
-                    rgb = self.camera.average_rgb_in_center(image_path, square_size,
-                                                           show_crop=True, save_crop=True, rgba=rgba)
-                    if rgba == False:
-                        self.logger.info("RGB analysis completed: (%.1f, %.1f, %.1f)", *rgb)
-                    else:
-                        self.logger.info("RGBA analysis completed: (%.1f, %.1f, %.1f, %.1f)", *rgb)
+                    self.logger.debug("Analyzing image for %s values", color_space)
+                    color = self.camera.average_color_in_center(image_path, square_size,
+                                                           show_crop=True, save_crop=True, color_space=color_space)
+                    print("COLORRR: %s", color)
+                    if color_space == "RGB":
+                        self.logger.info("RGB analysis completed: (%.1f, %.1f, %.1f)", color["R"], color["G"], color["B"])
+                    elif color_space == "RGBA":
+                        self.logger.info("RGBA analysis completed: (%.1f, %.1f, %.1f, %.1f)", color["R"], color["G"], color["B"], color["A"])
+                    elif color_space == "LAB":
+                        self.logger.info("LAB analysis completed: (%.1f, %.1f, %.1f)", color["L"], color["A"], color["B"])
+                    elif color_space == "HSV":
+                        self.logger.info("HSV analysis completed: (%.1f, %.1f, %.1f)", color["H"], color["S"], color["V"])
 
                     # Remove the full-frame file; keep only the saved crop. Only attempt
                     # to remove if camera is not virtual and the file exists.
@@ -431,7 +449,7 @@ class Liquid_Dispenser:
                     except Exception:
                         self.logger.warning("Failed to remove full image file: %s", image_path)
 
-                    return rgb
+                    return color
 
                 except Exception:
                     # If processing failed, leave the original image for inspection

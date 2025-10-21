@@ -34,16 +34,21 @@ import time
 import logging
 import os
 import datetime
+import cv2
+
 
 # Workflow configuration
-INITIAL_BATCH_SIZE = 5  # First batch of wells to create
-SUBSEQUENT_BATCH_SIZE = 3  # Size of subsequent batches
-MAX_WELLS = 24  # Maximum number of wells on plate
+INITIAL_BATCH_SIZE = 5  # First batch of wells to create (5)
+SUBSEQUENT_BATCH_SIZE = 3  # Size of subsequent batches (3)
+MAX_WELLS = 24  # Maximum number of wells on plate (24)
 TARGET_WELL = 0  # Well containing the target sample
 RANDOM_SEED = 42
-RGBA = False
 
-VIRTUAL = False
+VIRTUAL = True
+
+# Choose color space for matching: 'RGB', 'RGBA', 'HSV', or 'LAB'
+COLOR_SPACE = 'HSV'
+COLOR_SPACE = COLOR_SPACE.upper() #just to make sure it's in uppercase
 
 # Reservoir mapping
 RESERVOIRS = {
@@ -55,15 +60,185 @@ RESERVOIRS = {
     'waste': 5   # Waste container
 }
 
-
 # Get workflow name (file name without extension)
 workflow_name = os.path.splitext(os.path.basename(__file__))[0]
 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 output_dir = os.path.join("output", workflow_name, timestamp)
 
+# check if skimage is available for color conversions
+try:
+    from skimage import color as skcolor
+    SKIMAGE_AVAILABLE = True
+except Exception:
+    SKIMAGE_AVAILABLE = False
+
 def rgb_distance(rgb1, rgb2):
     """Calculate Euclidean distance between two RGB colors."""
     return np.sqrt(sum((c1 - c2) ** 2 for c1, c2 in zip(rgb1, rgb2)))
+
+def rgb_to_hsv(rgb):
+    """Convert an (R,G,B) tuple (0-255) to (H,S,V) where H is degrees [0-360), S and V in [0,1]."""
+    if rgb is None:
+        return None
+    r, g, b = [int(x) for x in rgb[:3]]
+    arr = np.uint8([[[r, g, b]]])
+    hsv_cv = cv2.cvtColor(arr, cv2.COLOR_RGB2HSV)[0, 0]
+    h = float(hsv_cv[0]) * 2.0
+    s = float(hsv_cv[1]) / 255.0
+    v = float(hsv_cv[2]) / 255.0
+    return (h, s, v)
+
+def rgb_to_lab(rgb):
+    """Convert (R,G,B) tuple (0-255) to Lab (L in 0-100, a/b roughly -128..127).
+
+    Uses skimage if available for standard ranges, otherwise OpenCV with scaling.
+    """
+    if rgb is None:
+        return None
+    r, g, b = [int(x) for x in rgb[:3]]
+    arr = np.uint8([[[r, g, b]]])
+    if SKIMAGE_AVAILABLE:
+        # skimage expects floats in [0,1]
+        arr_f = arr.astype('float32') / 255.0
+        lab = skcolor.rgb2lab(arr_f)[0, 0]
+        return tuple(float(x) for x in lab)
+    else:
+        lab_cv = cv2.cvtColor(arr, cv2.COLOR_RGB2LAB)[0, 0].astype(float)
+        L = lab_cv[0] * (100.0 / 255.0)
+        a = lab_cv[1] - 128.0
+        b = lab_cv[2] - 128.0
+        return (L, a, b)
+
+def hue_distance_deg(h1, h2):
+    d = abs(h1 - h2) % 360
+    if d > 180:
+        d = 360 - d
+    return d
+
+def hsv_distance(hsv1, hsv2, weights=(0.6, 0.2, 0.2)):
+    if hsv1 is None or hsv2 is None:
+        return float('inf')
+    h1, s1, v1 = hsv1
+    h2, s2, v2 = hsv2
+    dh = hue_distance_deg(h1, h2) / 180.0
+    ds = abs(s1 - s2)
+    dv = abs(v1 - v2)
+    w_h, w_s, w_v = weights
+    return np.sqrt((w_h * dh) ** 2 + (w_s * ds) ** 2 + (w_v * dv) ** 2)
+
+def lab_distance(lab1, lab2):
+    if lab1 is None or lab2 is None:
+        return float('inf')
+    return np.sqrt(sum((float(a) - float(b)) ** 2 for a, b in zip(lab1, lab2)))
+
+def get_color_distance(target_col, sample_col, color_space=COLOR_SPACE):
+    target_col = tuple(target_col.values())
+    sample_col = tuple(sample_col.values())
+
+    if color_space == 'RGB' or color_space == 'RGBA':
+        return rgb_distance(target_col, sample_col)
+    elif color_space == 'HSV':
+        return hsv_distance(target_col, sample_col)
+    elif color_space == 'LAB':
+        return lab_distance(target_col, sample_col)
+    else:
+        return None
+
+def get_color_str(color_dict): #outputs a string representation of color dict (universal for all color spaces)
+    return ", ".join(f"{k}={float(v):.3f}" for k, v in color_dict.items())
+
+# def _possible_crop_filenames(image_suffix):
+#     """Return a list of possible crop filenames produced by Camera.average_color_in_center.
+
+#     Camera names crops either `center_crop{n}.jpg` when the original filename
+#     matched `well_plate(\d+)`, otherwise it uses `center_crop_{base_name}.jpg`.
+#     We construct a set of likely candidates and let the caller pick whichever exists.
+#     """
+#     # Direct numeric style (if image_suffix is numeric or contains digits)
+#     candidates = []
+#     # e.g., center_crop0.jpg or center_crop12.jpg
+#     candidates.append(f"center_crop{image_suffix}.jpg")
+#     # fallback base_name style: original base was 'well_plate{image_suffix}'
+#     candidates.append(f"center_crop_well_plate{image_suffix}.jpg")
+#     # generic fallback (underscore)
+#     candidates.append(f"center_crop_{image_suffix}.jpg")
+#     # another fallback if someone passed 'well_plate12' as suffix
+#     candidates.append(f"center_crop_{'well_plate' + str(image_suffix)}.jpg")
+#     return candidates
+
+# def find_crop_path(dispenser, image_suffix):
+#     """Find the actual saved crop path for a given image_suffix using camera output_dir.
+
+#     Returns full path or None if not found.
+#     """
+#     crop_dir = os.path.join(dispenser.camera.output_dir, "center_crops")
+#     for fname in _possible_crop_filenames(image_suffix):
+#         p = os.path.join(crop_dir, fname)
+#         if os.path.exists(p):
+#             return p
+#     # Try listing folder and match by contains image_suffix
+#     if os.path.isdir(crop_dir):
+#         for f in os.listdir(crop_dir):
+#             if str(image_suffix) in f:
+#                 return os.path.join(crop_dir, f)
+#     return None
+
+# def mean_lab_from_crop(crop_path):
+#     """Load a crop image and return mean Lab in conventional ranges (L:0-100, a,b approx -128..127).
+
+#     Uses scikit-image if available (recommended) otherwise OpenCV with scaling.
+#     """
+#     if crop_path is None or not os.path.exists(crop_path):
+#         return None
+#     try:
+#         import numpy as _np
+#         from PIL import Image as _Image
+#         img = _Image.open(crop_path).convert('RGB')
+#         arr = _np.array(img)
+#         if SKIMAGE_AVAILABLE:
+#             # skimage expects floats in [0,1]
+#             arr_f = arr.astype('float32') / 255.0
+#             lab = skcolor.rgb2lab(arr_f)
+#             mean_lab = _np.mean(lab.reshape(-1, 3), axis=0)
+#             return tuple(mean_lab.tolist())
+#         else:
+#             # OpenCV path: convert RGB->BGR then to LAB, scale to conventional Lab
+#             import cv2 as _cv2
+#             bgr = _cv2.cvtColor(arr, _cv2.COLOR_RGB2BGR)
+#             lab_cv = _cv2.cvtColor(bgr, _cv2.COLOR_BGR2LAB).astype(float)
+#             mean_lab_cv = _np.mean(lab_cv.reshape(-1, 3), axis=0)
+#             # Convert OpenCV LAB (L 0-255) to conventional L 0-100, a/b offset by 128
+#             L = mean_lab_cv[0] * (100.0 / 255.0)
+#             a = mean_lab_cv[1] - 128.0
+#             b = mean_lab_cv[2] - 128.0
+#             return (L, a, b)
+#     except Exception:
+#         return None
+
+# def mean_hsv_from_crop(crop_path):
+#     """Load a crop image and return mean HSV (H degrees [0-360), S [0-1], V [0-1])."""
+#     if crop_path is None or not os.path.exists(crop_path):
+#         return None
+#     try:
+#         import numpy as _np
+#         from PIL import Image as _Image
+#         img = _Image.open(crop_path).convert('RGB')
+#         arr = _np.array(img)
+#         # Convert RGB array [H,W,3] uint8 to HSV via OpenCV
+#         import cv2 as _cv2
+#         rgb = arr.astype('uint8')
+#         hsv_cv = _cv2.cvtColor(rgb, _cv2.COLOR_RGB2HSV).astype(float)
+#         # HSV: H [0,179] -> degrees, S,V [0,255] -> normalize
+#         h = hsv_cv[:, :, 0] * 2.0
+#         s = hsv_cv[:, :, 1] / 255.0
+#         v = hsv_cv[:, :, 2] / 255.0
+#         mean_h = float(_np.mean(h))
+#         mean_s = float(_np.mean(s))
+#         mean_v = float(_np.mean(v))
+#         return (mean_h, mean_s, mean_v)
+#     except Exception:
+#         return None
+
 
 def volumes_to_milliliters(volumes_dict, total_volume_ml=1.0):
     """
@@ -152,6 +327,8 @@ def condition_system(dispenser, logger):
         dest_index=RESERVOIRS['waste']
     )
 
+
+
 def main():
     """Main color matching workflow."""
     
@@ -168,7 +345,7 @@ def main():
         actuator_comport="COM6",
         virtual=VIRTUAL,  # Set to False for real hardware
         camera_index=1, 
-        log_level=logging.INFO,
+        log_level=logging.DEBUG,
         output_dir=output_dir
     )
     dispenser.cnc_machine.Z_LOW_BOUND = -70  # Adjust as needed
@@ -184,18 +361,16 @@ def main():
         slack_agent.send_slack_message("Color Matching Workflow started on real hardware.", SLACK_CHANNEL)
 
     try:
-        # Step 1: Read target RGB from well 0
-        logger.info("Step 1: Reading target RGB values from sample at well 0")
-        target_rgb = dispenser.get_image_rgb("well_plate_camera", TARGET_WELL, "target_sample", square_size=60, rgba = RGBA)
-        
-        if RGBA:
-            logger.info(f"Target RGB values: R={target_rgb[0]}, G={target_rgb[1]}, B={target_rgb[2]}, alpha={target_rgb[3]}")
-        else:
-            logger.info(f"Target RGB values: R={target_rgb[0]}, G={target_rgb[1]}, B={target_rgb[2]}")
-        
-        # Calculate upper bound for optimization (max possible distance)
+        # Step 1: Read target color from well 0
+        logger.info("Step 1: Reading target color values from sample at well 0")
+        target_color = dispenser.get_image_color("well_plate_camera", TARGET_WELL, "target_sample", square_size=60, color_space=COLOR_SPACE)
+
+
+        logger.info(f"Target {COLOR_SPACE} values: {get_color_str(target_color)}") #log the target color values
+
+        # Calculate upper bound for optimization (max possible distance) - keep RGB max for optimizer scaling
         max_distance = rgb_distance([0, 0, 0], [255, 255, 255])  # Max possible RGB distance
-        
+
         # Initialize Bayesian optimization campaign
         logger.info("Initializing Bayesian optimization campaign...")
         campaign, searchspace = initialize_campaign(
@@ -232,51 +407,42 @@ def main():
             # Create mixture
             create_mixture_at_well(dispenser, current_well, volumes_ml, logger)
             
-            # Condition system after each mixture
-            #condition_system(dispenser, logger)
-            
             # Store experiment details
             results_data.append({
                 'well': current_well,
-                'R_volume_ml': volumes_ml['R'],
-                'Y_volume_ml': volumes_ml['Y'],
-                'B_volume_ml': volumes_ml['B'], 
-                'Water_volume_ml': volumes_ml['Water'],
-                'R': suggestion['R'],  # Original optimizer values
-                'Y': suggestion['Y'],
-                'B': suggestion['B'],
-                'Water': suggestion['Water']
+                'R_volume_ml': round(volumes_ml['R'], 2),
+                'Y_volume_ml': round(volumes_ml['Y'], 2),
+                'B_volume_ml': round(volumes_ml['B'], 2),
+                'Water_volume_ml': round(volumes_ml['Water'], 2),
+                # 'R': suggestion['R'],  # Original optimizer values
+                # 'Y': suggestion['Y'],
+                # 'B': suggestion['B'],
+                # 'Water': suggestion['Water']
             })
             
             current_well += 1
         
         # Step 3: Analyze RGB of initial wells
         logger.info("Step 3: Analyzing RGB values of initial wells...")
-        time.sleep(2)  # Allow time for mixing
         
         results_list = []
         for i, result in enumerate(results_data):
             well_idx = result['well']
             logger.debug(f"Analyzing RGB for well {well_idx}")
             
-            well_rgb = dispenser.get_image_rgb("well_plate_camera", well_idx, f"experiment_{well_idx}", square_size=60, rgba = RGBA)
-            result['measured_R'] = well_rgb[0]
-            result['measured_G'] = well_rgb[1] 
-            result['measured_B'] = well_rgb[2]
-
-            if RGBA:
-                result['measured_alpha'] = well_rgb[3]
+            well_color = dispenser.get_image_color("well_plate_camera", well_idx, f"experiment_{well_idx}", square_size=60, color_space=COLOR_SPACE)
             
-            # Calculate distance to target (this is what we want to minimize)
-            distance = rgb_distance(target_rgb, well_rgb)
+            for key, value in well_color.items(): #store the resulting color values
+                result[f'measured_{key}'] = round(value, 2)
+
+            distance = get_color_distance(target_color, well_color, color_space=COLOR_SPACE)
+
             results_list.append(distance)  # Store for adding to suggestions DataFrame
             result['output'] = distance  # Store in our tracking data
             
-            if RGBA == False:
-                logger.info(f"Well {well_idx}: RGB=({well_rgb[0]:.0f}, {well_rgb[1]:.0f}, {well_rgb[2]:.0f}), Distance={distance:.1f}")
-            else:
-                logger.info(f"Well {well_idx}: RGBA=({well_rgb[0]:.0f}, {well_rgb[1]:.0f}, {well_rgb[2]:.0f}), {well_rgb[3]:.0f}), Distance={distance:.1f}")
-        
+            logger.info(f"Well {well_idx}: {COLOR_SPACE}={get_color_str(well_color)}, Distance={distance:.1f}") #Outputting the RGB values for logging
+            
+
         # Add results to the suggestions dataframe (this is what the optimizer expects)
         initial_suggestions['output'] = results_list
         campaign_data = initial_suggestions.copy()  # Track all experiments
@@ -321,14 +487,14 @@ def main():
                 # Store results
                 batch_result = {
                     'well': current_well,
-                    'R_volume_ml': volumes_ml['R'],
-                    'Y_volume_ml': volumes_ml['Y'],
-                    'B_volume_ml': volumes_ml['B'],
-                    'Water_volume_ml': volumes_ml['Water'], 
-                    'R': suggestion['R'],
-                    'Y': suggestion['Y'],
-                    'B': suggestion['B'],
-                    'Water': suggestion['Water']
+                    'R_volume_ml': round(volumes_ml['R'], 2),
+                    'Y_volume_ml': round(volumes_ml['Y'], 2),
+                    'B_volume_ml': round(volumes_ml['B'], 2),
+                    'Water_volume_ml': round(volumes_ml['Water'], 2),
+                    # 'R': suggestion['R'],
+                    # 'Y': suggestion['Y'],
+                    # 'B': suggestion['B'],
+                    # 'Water': suggestion['Water']
                 }
                 batch_results.append(batch_result)
                 current_well += 1
@@ -339,21 +505,18 @@ def main():
             
             for i, result in enumerate(batch_results):
                 well_idx = result['well'] 
-                well_rgb = dispenser.get_image_rgb("well_plate_camera", well_idx, f"experiment_{well_idx}", square_size=60, rgba=RGBA)
+                well_color = dispenser.get_image_color("well_plate_camera", well_idx, f"experiment_{well_idx}", square_size=60, color_space=COLOR_SPACE)
                 
-                result['measured_R'] = well_rgb[0]
-                result['measured_G'] = well_rgb[1]
-                result['measured_B'] = well_rgb[2]
+                for key, value in well_color.items(): #store the resulting color values
+                    result[f'measured_{key}'] = round(value, 2)
 
-                if RGBA:
-                    result['measured_alpha'] = well_rgb[3]
-                
-                distance = rgb_distance(target_rgb, well_rgb)
-                result['output'] = distance
-                results_list.append(distance)
-                
-                logger.info(f"Well {well_idx}: RGB=({well_rgb[0]:.0f}, {well_rgb[1]:.0f}, {well_rgb[2]:.0f}), Distance={distance:.1f}")
-            
+                distance = get_color_distance(target_color, well_color, color_space=COLOR_SPACE)
+
+                results_list.append(distance)  # Store for adding to suggestions DataFrame
+                result['output'] = distance  # Store in our tracking data
+
+                logger.info(f"Well {well_idx}: {COLOR_SPACE}={get_color_str(well_color)}, Distance={distance:.1f}")
+
             # Add results to the new suggestions and combine with campaign data
             new_suggestions['output'] = results_list
             campaign_data = pd.concat([campaign_data, new_suggestions], ignore_index=True)
@@ -371,10 +534,11 @@ def main():
         best_result = min(results_data, key=lambda x: x['output'])
         logger.info(f"Best color match found at well {best_result['well']}")
         logger.info(f"Distance to target: {best_result['output']:.2f}")
-        logger.info(f"RGB: ({best_result['measured_R']}, {best_result['measured_G']}, {best_result['measured_B']})")
+        #logger.info(f"RGB: ({best_result['measured_R']}, {best_result['measured_G']}, {best_result['measured_B']})")
+        logger.info(f"{COLOR_SPACE}: {get_color_str({k.replace('measured_',''):v for k,v in best_result.items() if k.startswith('measured_')})}")        
         logger.info(f"Recipe: R={best_result['R_volume_ml']:.3f}mL, Y={best_result['Y_volume_ml']:.3f}mL, B={best_result['B_volume_ml']:.3f}mL, Water={best_result['Water_volume_ml']:.3f}mL")
         
-        if not dispenser.virtual:
+        if dispenser.virtual: #TODO: save back to not virtual!
             # Save results to CSV inside the workflow output directory
             results_df = pd.DataFrame(results_data)
 
@@ -385,18 +549,14 @@ def main():
                 target_row = {}
                 for col in results_df.columns:
                     if col == 'well':
-                        # mark the target well index (usually 0)
                         target_row[col] = "Target"
-                    elif col == 'measured_R':
-                        target_row[col] = int(target_rgb[0])
-                    elif col == 'measured_G':
-                        target_row[col] = int(target_rgb[1])
-                    elif col == 'measured_B':
-                        target_row[col] = int(target_rgb[2])
-                    elif col == 'measured_alpha' and RGBA:
-                        target_row[col] = int(target_rgb[3])
+                    elif col.startswith("measured_"):
+                        # Extract the color channel from column name
+                        channel = col.replace("measured_", "")
+                        # Fill with target value if present, else NaN
+                        target_row[col] = target_color.get(channel, np.nan)
                     else:
-                        # fill other columns with NaN so columns align
+                        # Other columns stay NaN
                         target_row[col] = np.nan
 
                 # concat the single-row DataFrame to the results
@@ -404,7 +564,7 @@ def main():
             except Exception:
                 logger.exception("Failed to append target RGB row; saving without it.")
 
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
             # Ensure the output directory exists
             os.makedirs(output_dir, exist_ok=True)
             results_file = os.path.join(output_dir, f"color_matching_results_{timestamp}.csv")

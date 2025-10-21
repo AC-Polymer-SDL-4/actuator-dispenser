@@ -6,7 +6,7 @@ from PIL import Image
 import matplotlib.pyplot as plt
 import numpy as np
 import re
-
+from log_config import setup_logger, log_method_entry, log_method_exit, log_virtual_action
 
 class Camera:
     """
@@ -28,23 +28,14 @@ class Camera:
             virtual (bool): If True, simulates camera operations without hardware
             log_level: Logging level (DEBUG, INFO, WARNING, ERROR)
         """
-        # Setup logging to match CNC_Machine format
-        self.logger = logging.getLogger(__name__ + ".Camera")
-        if not self.logger.handlers:
-            handler = logging.StreamHandler()
-            formatter = logging.Formatter(
-                '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-                datefmt='%Y-%m-%d %H:%M:%S'
-            )
-            handler.setFormatter(formatter)
-            self.logger.addHandler(handler)
-        self.logger.setLevel(log_level)
-        
         self.output_dir = output_dir
         self.virtual = virtual
         self.camera_index = camera_index
         self.cap = None
         
+        # Setup centralized logging with virtual mode tagging
+        self.logger = setup_logger("camera", virtual=virtual, log_level=log_level)
+
         self.logger.info(
             "Camera initialized: index=%d, output_dir=%s, virtual=%s", 
             camera_index, output_dir, virtual
@@ -135,23 +126,80 @@ class Camera:
         else:
             self.logger.warning("No camera to release")
 
-    def average_rgb_in_center(self, image_path, square_size=100, show_crop=True, save_crop=True, crop_folder="center_crops", rgba = False):
+    def average_color_in_center(self, image_path, square_size=100, show_crop=True, save_crop=True, crop_folder="center_crops", color_space="RGB"):
         """
-        Calculate the average RGB values in the center square of an image.
-        
+        Calculate the average color values in the center square of an image.
+x
         Args:
             image_path (str): Path to the image file
             square_size (int): Size of the center square in pixels
             show_crop (bool): Whether to display the cropped image
             save_crop (bool): Whether to save the cropped image
             crop_folder (str): Folder name for saving cropped images
-            
+            color_mode (str): Color mode, either "RGB" or "RGBA" or "LAB" or "HSV"
         Returns:
-            tuple: Average RGB values (R, G, B)
+            dict: Average colour values ex. {"R": val, "G": val, "B": val} for RGB
         """
         self.logger.debug("Processing image: %s (square_size=%d)", image_path, square_size)
-        
-        try:
+
+        if getattr(self, "virtual", False):
+            self.logger.info("Simulation mode enabled — generating random color values.")
+
+            # Decide which colour spaces to compute
+            if color_space is None:
+                requested = None
+                self.logger.warning("color_space is None in virtual mode; defaulting to RGB")
+                requested = ["RGB"]
+            elif isinstance(color_space, (list, tuple)):
+                requested = [s.upper() for s in color_space]
+            else:
+                requested = [str(color_space).upper()]
+
+            results = {}
+
+            for space in requested:
+                if space == "RGB":
+                    results["RGB"] = {
+                        "R": float(np.random.uniform(0, 255)),
+                        "G": float(np.random.uniform(0, 255)),
+                        "B": float(np.random.uniform(0, 255)),
+                    }
+
+                elif space == "RGBA":
+                    results["RGBA"] = {
+                        "R": float(np.random.uniform(0, 255)),
+                        "G": float(np.random.uniform(0, 255)),
+                        "B": float(np.random.uniform(0, 255)),
+                        "A": 255.0,
+                    }
+
+                elif space == "HSV":
+                    results["HSV"] = {
+                        "H": float(np.random.uniform(0, 360)),
+                        "S": float(np.random.uniform(0, 100)),
+                        "V": float(np.random.uniform(0, 100)),
+                    }
+
+                elif space == "LAB":
+                    results["LAB"] = {
+                        "L": float(np.random.uniform(0, 100)),
+                        "A": float(np.random.uniform(-128, 127)),
+                        "B": float(np.random.uniform(-128, 127)),
+                    }
+
+            # Simulate crop metadata (no real file)
+            results["crop_path"] = None
+            results["crop_rect"] = (0, 0, square_size, square_size)
+
+            self.logger.info("[Virtual] mode color results: %s", results)
+
+            # Match normal return behavior
+            if len(requested) == 1:
+                return results[requested[0]] #only returns the value for the color space chosen
+            
+            return results
+
+        try: # in  real hardware
             # Open the image using PIL and ensure it's in RGB mode
             image = Image.open(image_path).convert('RGB')
             width, height = image.size
@@ -169,13 +217,81 @@ class Camera:
             cropped = image.crop((left, top, right, bottom))
             arr = np.array(cropped)
 
-            # Compute average RGB over the cropped area
-            if rgba == False: 
-                avg_rgb = tuple(np.mean(arr, axis=(0, 1)[:3])) #slice to only get the rgb values
-                self.logger.info("Average RGB calculated: (%.1f, %.1f, %.1f)", *avg_rgb)
-            else: 
-                avg_rgb = tuple(np.mean(arr, axis=(0, 1))) #already gets alpha value too
-                self.logger.info("Average RGBA calculated: (%.1f, %.1f, %.1f, %.1f)", *avg_rgb)
+            # Decide which colour spaces to compute. Accepts None (use color_mode), a string, or a list/tuple
+            if color_space is None:
+                requested = [str(color_space).upper()]
+            elif isinstance(colour_space, (list, tuple)):
+                requested = [s.upper() for s in colour_space]
+            else:
+                requested = [str(colour_space).upper()]
+
+            # Prepare a result mapping
+            results = {}
+
+            # Ensure we have an RGB array to derive other spaces from
+            rgb_arr = arr[..., :3].astype(np.uint8)
+
+            # Helper: include crop_path later after saving
+            # Compute RGB / RGBA
+            if any(r in ("RGB",) for r in requested):
+                mean_rgb = tuple(np.mean(rgb_arr, axis=(0, 1)).astype(float))
+                results['RGB'] = {"R": mean_rgb[0], "G": mean_rgb[1], "B": mean_rgb[2]}
+                self.logger.info("Average RGB calculated: (%.1f, %.1f, %.1f)", *mean_rgb)
+
+            if any(r in ("RGBA",) for r in requested):
+                # If alpha channel present, use it; otherwise assume fully opaque (255)
+                if arr.shape[-1] == 4:
+                    mean_rgba = tuple(np.mean(arr, axis=(0, 1)).astype(float))
+                else:
+                    mean_rgb = tuple(np.mean(rgb_arr, axis=(0, 1)).astype(float))
+                    mean_rgba = (mean_rgb[0], mean_rgb[1], mean_rgb[2], 255.0)
+                results['RGBA'] = {"R": mean_rgba[0], "G": mean_rgba[1], "B": mean_rgba[2], "A": mean_rgba[3]}
+                self.logger.info("Average RGBA calculated: (%.1f, %.1f, %.1f, %.1f)", *mean_rgba)
+
+            # Compute HSV (normalized: H 0-360, S/V 0-100)
+            if any(r in ("HSV",) for r in requested):
+                hsv_image = cv2.cvtColor(rgb_arr, cv2.COLOR_RGB2HSV)
+                h = hsv_image[..., 0].astype(np.float32)
+                s = hsv_image[..., 1].astype(np.float32)
+                v = hsv_image[..., 2].astype(np.float32)
+
+                # Hue circular mean: convert to radians (degrees = h*2, radians = degrees * pi/180)
+                hue_rad = h * 2.0 * np.pi / 180.0
+                mean_sin = np.mean(np.sin(hue_rad))
+                mean_cos = np.mean(np.cos(hue_rad))
+                mean_hue_rad = np.arctan2(mean_sin, mean_cos)
+                mean_hue_deg = (mean_hue_rad * 180.0 / np.pi) % 360.0
+
+                mean_s_percent = float(np.mean(s) / 255.0 * 100.0)
+                mean_v_percent = float(np.mean(v) / 255.0 * 100.0)
+
+                results['HSV'] = {"H": float(mean_hue_deg), "S": mean_s_percent, "V": mean_v_percent}
+                self.logger.info("Average HSV calculated: (H=%.1f°, S=%.1f%%, V=%.1f%%)", mean_hue_deg, mean_s_percent, mean_v_percent)
+
+            # Compute LAB (prefer skimage, fallback to OpenCV conversion)
+            if any(r in ("LAB",) for r in requested):
+                lab_mean = None
+                try:
+                    from skimage import color as skcolor
+                    # skimage expects floats in 0..1
+                    rgb_float = rgb_arr.astype(np.float64) / 255.0
+                    lab = skcolor.rgb2lab(rgb_float)
+                    lab_mean_vals = np.mean(lab.reshape(-1, 3), axis=0)
+                    lab_mean = (float(lab_mean_vals[0]), float(lab_mean_vals[1]), float(lab_mean_vals[2]))
+                    self.logger.debug("Used skimage.rgb2lab for LAB conversion")
+                except Exception:
+                    # Fallback: OpenCV conversion (uint8), then map OpenCV ranges to conventional
+                    lab_image = cv2.cvtColor(rgb_arr, cv2.COLOR_RGB2LAB)
+                    mean_lab_cv = np.mean(lab_image, axis=(0, 1))
+                    L = float(mean_lab_cv[0]) * (100.0 / 255.0)
+                    a = float(mean_lab_cv[1]) - 128.0
+                    b = float(mean_lab_cv[2]) - 128.0
+                    lab_mean = (L, a, b)
+                    self.logger.debug("Used OpenCV for LAB conversion (fallback)")
+
+                results['LAB'] = {"L": lab_mean[0], "a": lab_mean[1], "b": lab_mean[2]}
+                self.logger.info("Average LAB calculated: (%.2f, %.2f, %.2f)", lab_mean[0], lab_mean[1], lab_mean[2])
+            # End of colour computations
 
             # Save the cropped image automatically
             if save_crop:
@@ -199,6 +315,25 @@ class Camera:
                 cropped.save(crop_path)
                 self.logger.debug("Center crop saved: %s", crop_filename)
 
+            # Attach crop metadata
+            if 'crop_path' not in locals():
+                crop_path = None
+            # Attach metadata to results
+            results['crop_path'] = crop_path
+            results['crop_rect'] = (left, top, right, bottom)
+
+            # Backwards compatibility: if colour_space was None and color_mode was RGB, return legacy dict
+            if colour_space is None and (color_space is None or str(color_space).upper() == 'RGB'):
+                return results.get('RGB', {})
+
+            # If only a single requested space was asked, return that space's dict for convenience
+            if len(requested) == 1:
+                space = requested[0]
+                return results.get(space, {}) #returns only the dict for that colour space
+
+            # Otherwise return full results mapping
+            return results
+
             if show_crop:
                 self.logger.debug("Displaying cropped image")
                 plt.imshow(cropped)
@@ -206,7 +341,7 @@ class Camera:
                 plt.axis("off")
                 plt.show()
 
-            return avg_rgb
+            return avg_color
             
         except Exception as e:
             self.logger.error("Failed to process image %s: %s", image_path, e)
