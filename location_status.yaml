@@ -27,7 +27,7 @@ well_plate: #Array-location
   y_origin: 101.000
   z_origin: 0
   x_offset: 19 #Measure with caliper
-  y_offset: -20 #MEasure with caliper
+  y_offset: -19.5 #MEasure with caliper
   aspirate_height: none
   dispense_height: -25
   mixing_height: -50

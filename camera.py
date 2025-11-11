@@ -7,6 +7,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import re
 from log_config import setup_logger, log_method_entry, log_method_exit, log_virtual_action
+import torch
+import gc
 
 class Camera:
     """
@@ -123,6 +125,7 @@ class Camera:
             self.logger.info("Releasing camera resources")
             self.cap.release()
             self.logger.debug("Camera released successfully")
+            cv2.destroyAllWindows()
         else:
             self.logger.warning("No camera to release")
 
@@ -220,10 +223,10 @@ x
             # Decide which colour spaces to compute. Accepts None (use color_mode), a string, or a list/tuple
             if color_space is None:
                 requested = [str(color_space).upper()]
-            elif isinstance(colour_space, (list, tuple)):
-                requested = [s.upper() for s in colour_space]
+            elif isinstance(color_space, (list, tuple)):
+                requested = [s.upper() for s in color_space]
             else:
-                requested = [str(colour_space).upper()]
+                requested = [str(color_space).upper()]
 
             # Prepare a result mapping
             results = {}
@@ -289,7 +292,7 @@ x
                     lab_mean = (L, a, b)
                     self.logger.debug("Used OpenCV for LAB conversion (fallback)")
 
-                results['LAB'] = {"L": lab_mean[0], "a": lab_mean[1], "b": lab_mean[2]}
+                results['LAB'] = {"L": lab_mean[0], "A": lab_mean[1], "B": lab_mean[2]}
                 self.logger.info("Average LAB calculated: (%.2f, %.2f, %.2f)", lab_mean[0], lab_mean[1], lab_mean[2])
             # End of colour computations
 
@@ -322,18 +325,6 @@ x
             results['crop_path'] = crop_path
             results['crop_rect'] = (left, top, right, bottom)
 
-            # Backwards compatibility: if colour_space was None and color_mode was RGB, return legacy dict
-            if colour_space is None and (color_space is None or str(color_space).upper() == 'RGB'):
-                return results.get('RGB', {})
-
-            # If only a single requested space was asked, return that space's dict for convenience
-            if len(requested) == 1:
-                space = requested[0]
-                return results.get(space, {}) #returns only the dict for that colour space
-
-            # Otherwise return full results mapping
-            return results
-
             if show_crop:
                 self.logger.debug("Displaying cropped image")
                 plt.imshow(cropped)
@@ -341,7 +332,28 @@ x
                 plt.axis("off")
                 plt.show()
 
-            return avg_color
+            # Backwards compatibility: if colour_space was None and color_mode was RGB, return legacy dict
+            if color_space is None and (color_space is None or str(color_space).upper() == 'RGB'):
+                return results.get('RGB', {})
+
+            # If only a single requested space was asked, return that space's dict for convenience
+            if len(requested) == 1:
+                space = requested[0]
+                return results.get(space, {}) #returns only the dict for that colour space
+
+            # Once done, delete tensor and image, then clear memory
+            del tensor
+            del img
+            gc.collect()
+
+            # if torch.cuda.is_available():
+            #     torch.cuda.empty_cache()  # safe even if using CPU only
+
+            # Otherwise return full results mapping
+            return results
+
+            
+
             
         except Exception as e:
             self.logger.error("Failed to process image %s: %s", image_path, e)

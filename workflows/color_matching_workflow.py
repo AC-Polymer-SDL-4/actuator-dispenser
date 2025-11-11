@@ -41,10 +41,10 @@ import cv2
 INITIAL_BATCH_SIZE = 5  # First batch of wells to create (5)
 SUBSEQUENT_BATCH_SIZE = 3  # Size of subsequent batches (3)
 MAX_WELLS = 24  # Maximum number of wells on plate (24)
-TARGET_WELL = 0  # Well containing the target sample
+TARGET_WELL = 0  # Index of well containing the target sample
 RANDOM_SEED = 42
 
-VIRTUAL = True
+VIRTUAL = False
 
 # Choose color space for matching: 'RGB', 'RGBA', 'HSV', or 'LAB'
 COLOR_SPACE = 'HSV'
@@ -60,54 +60,24 @@ RESERVOIRS = {
     'waste': 5   # Waste container
 }
 
+SPEED = 32768  #default speed for dispensing (32768/2 with old syringe)
+RINSE_SPEED = 32768 #(32768*1.25 for old syringe)
+
 # Get workflow name (file name without extension)
 workflow_name = os.path.splitext(os.path.basename(__file__))[0]
 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-output_dir = os.path.join("output", workflow_name, timestamp)
+output_dir = os.path.join("output", workflow_name, f"{timestamp}_{COLOR_SPACE}")
 
 # check if skimage is available for color conversions
-try:
-    from skimage import color as skcolor
-    SKIMAGE_AVAILABLE = True
-except Exception:
-    SKIMAGE_AVAILABLE = False
+# try:
+#     from skimage import color as skcolor
+#     SKIMAGE_AVAILABLE = True
+# except Exception:
+#     SKIMAGE_AVAILABLE = False
 
 def rgb_distance(rgb1, rgb2):
     """Calculate Euclidean distance between two RGB colors."""
     return np.sqrt(sum((c1 - c2) ** 2 for c1, c2 in zip(rgb1, rgb2)))
-
-def rgb_to_hsv(rgb):
-    """Convert an (R,G,B) tuple (0-255) to (H,S,V) where H is degrees [0-360), S and V in [0,1]."""
-    if rgb is None:
-        return None
-    r, g, b = [int(x) for x in rgb[:3]]
-    arr = np.uint8([[[r, g, b]]])
-    hsv_cv = cv2.cvtColor(arr, cv2.COLOR_RGB2HSV)[0, 0]
-    h = float(hsv_cv[0]) * 2.0
-    s = float(hsv_cv[1]) / 255.0
-    v = float(hsv_cv[2]) / 255.0
-    return (h, s, v)
-
-def rgb_to_lab(rgb):
-    """Convert (R,G,B) tuple (0-255) to Lab (L in 0-100, a/b roughly -128..127).
-
-    Uses skimage if available for standard ranges, otherwise OpenCV with scaling.
-    """
-    if rgb is None:
-        return None
-    r, g, b = [int(x) for x in rgb[:3]]
-    arr = np.uint8([[[r, g, b]]])
-    if SKIMAGE_AVAILABLE:
-        # skimage expects floats in [0,1]
-        arr_f = arr.astype('float32') / 255.0
-        lab = skcolor.rgb2lab(arr_f)[0, 0]
-        return tuple(float(x) for x in lab)
-    else:
-        lab_cv = cv2.cvtColor(arr, cv2.COLOR_RGB2LAB)[0, 0].astype(float)
-        L = lab_cv[0] * (100.0 / 255.0)
-        a = lab_cv[1] - 128.0
-        b = lab_cv[2] - 128.0
-        return (L, a, b)
 
 def hue_distance_deg(h1, h2):
     d = abs(h1 - h2) % 360
@@ -146,98 +116,6 @@ def get_color_distance(target_col, sample_col, color_space=COLOR_SPACE):
 
 def get_color_str(color_dict): #outputs a string representation of color dict (universal for all color spaces)
     return ", ".join(f"{k}={float(v):.3f}" for k, v in color_dict.items())
-
-# def _possible_crop_filenames(image_suffix):
-#     """Return a list of possible crop filenames produced by Camera.average_color_in_center.
-
-#     Camera names crops either `center_crop{n}.jpg` when the original filename
-#     matched `well_plate(\d+)`, otherwise it uses `center_crop_{base_name}.jpg`.
-#     We construct a set of likely candidates and let the caller pick whichever exists.
-#     """
-#     # Direct numeric style (if image_suffix is numeric or contains digits)
-#     candidates = []
-#     # e.g., center_crop0.jpg or center_crop12.jpg
-#     candidates.append(f"center_crop{image_suffix}.jpg")
-#     # fallback base_name style: original base was 'well_plate{image_suffix}'
-#     candidates.append(f"center_crop_well_plate{image_suffix}.jpg")
-#     # generic fallback (underscore)
-#     candidates.append(f"center_crop_{image_suffix}.jpg")
-#     # another fallback if someone passed 'well_plate12' as suffix
-#     candidates.append(f"center_crop_{'well_plate' + str(image_suffix)}.jpg")
-#     return candidates
-
-# def find_crop_path(dispenser, image_suffix):
-#     """Find the actual saved crop path for a given image_suffix using camera output_dir.
-
-#     Returns full path or None if not found.
-#     """
-#     crop_dir = os.path.join(dispenser.camera.output_dir, "center_crops")
-#     for fname in _possible_crop_filenames(image_suffix):
-#         p = os.path.join(crop_dir, fname)
-#         if os.path.exists(p):
-#             return p
-#     # Try listing folder and match by contains image_suffix
-#     if os.path.isdir(crop_dir):
-#         for f in os.listdir(crop_dir):
-#             if str(image_suffix) in f:
-#                 return os.path.join(crop_dir, f)
-#     return None
-
-# def mean_lab_from_crop(crop_path):
-#     """Load a crop image and return mean Lab in conventional ranges (L:0-100, a,b approx -128..127).
-
-#     Uses scikit-image if available (recommended) otherwise OpenCV with scaling.
-#     """
-#     if crop_path is None or not os.path.exists(crop_path):
-#         return None
-#     try:
-#         import numpy as _np
-#         from PIL import Image as _Image
-#         img = _Image.open(crop_path).convert('RGB')
-#         arr = _np.array(img)
-#         if SKIMAGE_AVAILABLE:
-#             # skimage expects floats in [0,1]
-#             arr_f = arr.astype('float32') / 255.0
-#             lab = skcolor.rgb2lab(arr_f)
-#             mean_lab = _np.mean(lab.reshape(-1, 3), axis=0)
-#             return tuple(mean_lab.tolist())
-#         else:
-#             # OpenCV path: convert RGB->BGR then to LAB, scale to conventional Lab
-#             import cv2 as _cv2
-#             bgr = _cv2.cvtColor(arr, _cv2.COLOR_RGB2BGR)
-#             lab_cv = _cv2.cvtColor(bgr, _cv2.COLOR_BGR2LAB).astype(float)
-#             mean_lab_cv = _np.mean(lab_cv.reshape(-1, 3), axis=0)
-#             # Convert OpenCV LAB (L 0-255) to conventional L 0-100, a/b offset by 128
-#             L = mean_lab_cv[0] * (100.0 / 255.0)
-#             a = mean_lab_cv[1] - 128.0
-#             b = mean_lab_cv[2] - 128.0
-#             return (L, a, b)
-#     except Exception:
-#         return None
-
-# def mean_hsv_from_crop(crop_path):
-#     """Load a crop image and return mean HSV (H degrees [0-360), S [0-1], V [0-1])."""
-#     if crop_path is None or not os.path.exists(crop_path):
-#         return None
-#     try:
-#         import numpy as _np
-#         from PIL import Image as _Image
-#         img = _Image.open(crop_path).convert('RGB')
-#         arr = _np.array(img)
-#         # Convert RGB array [H,W,3] uint8 to HSV via OpenCV
-#         import cv2 as _cv2
-#         rgb = arr.astype('uint8')
-#         hsv_cv = _cv2.cvtColor(rgb, _cv2.COLOR_RGB2HSV).astype(float)
-#         # HSV: H [0,179] -> degrees, S,V [0,255] -> normalize
-#         h = hsv_cv[:, :, 0] * 2.0
-#         s = hsv_cv[:, :, 1] / 255.0
-#         v = hsv_cv[:, :, 2] / 255.0
-#         mean_h = float(_np.mean(h))
-#         mean_s = float(_np.mean(s))
-#         mean_v = float(_np.mean(v))
-#         return (mean_h, mean_s, mean_v)
-#     except Exception:
-#         return None
 
 
 def volumes_to_milliliters(volumes_dict, total_volume_ml=1.0):
@@ -292,7 +170,7 @@ def create_mixture_at_well(dispenser, well_index, volumes_ml, logger):
             #     num_conditions = 1)
 
             if component == last_component:
-                dispense_mix_volume=0.3
+                dispense_mix_volume=0.4
             else:
                 dispense_mix_volume=0
 
@@ -303,12 +181,15 @@ def create_mixture_at_well(dispenser, well_index, volumes_ml, logger):
                 dest_index=well_index,
                 transfer_vol=volume_ml,  # Now in mL as expected
                 mixing_vol=dispense_mix_volume,
+                num_mixes = 5 if component == last_component else 0,
+                speed = SPEED,
             )
 
             dispenser.rinse_needle(
                 wash_location="reservoir_12", 
                 wash_index=RESERVOIRS['wash'], 
-                num_mixes=3
+                num_mixes=3,
+                speed=RINSE_SPEED
             )
             
             # Small delay between dispenses
@@ -345,7 +226,7 @@ def main():
         actuator_comport="COM6",
         virtual=VIRTUAL,  # Set to False for real hardware
         camera_index=1, 
-        log_level=logging.DEBUG,
+        log_level=logging.INFO,
         output_dir=output_dir
     )
     dispenser.cnc_machine.Z_LOW_BOUND = -70  # Adjust as needed
@@ -442,6 +323,25 @@ def main():
             
             logger.info(f"Well {well_idx}: {COLOR_SPACE}={get_color_str(well_color)}, Distance={distance:.1f}") #Outputting the RGB values for logging
             
+            if not dispenser.virtual:
+                results_df = pd.DataFrame(results_data)
+
+                # Append target color as a reference row
+                target_row = {}
+                for col in results_df.columns:
+                    if col == 'well':
+                        target_row[col] = "Target"
+                    elif col.startswith("measured_"):
+                        channel = col.replace("measured_", "")
+                        target_row[col] = target_color.get(channel, np.nan)
+                    else:
+                        target_row[col] = np.nan
+                results_df = pd.concat([results_df, pd.DataFrame([target_row])], ignore_index=True)
+
+                os.makedirs(output_dir, exist_ok=True)
+                results_file = os.path.join(output_dir, "color_matching_results.csv")
+                results_df.to_csv(results_file, index=False)
+                logger.info(f"Progress (including target) saved to {results_file}")
 
         # Add results to the suggestions dataframe (this is what the optimizer expects)
         initial_suggestions['output'] = results_list
@@ -524,6 +424,27 @@ def main():
             # Add batch results to overall results tracking
             results_data.extend(batch_results)
             batch_number += 1
+
+            # Save partial CSV after each batch (overwrite same file)
+            if not dispenser.virtual:
+                results_df = pd.DataFrame(results_data)
+
+                # Append target color as a reference row
+                target_row = {}
+                for col in results_df.columns:
+                    if col == 'well':
+                        target_row[col] = "Target"
+                    elif col.startswith("measured_"):
+                        channel = col.replace("measured_", "")
+                        target_row[col] = target_color.get(channel, np.nan)
+                    else:
+                        target_row[col] = np.nan
+                results_df = pd.concat([results_df, pd.DataFrame([target_row])], ignore_index=True)
+
+                os.makedirs(output_dir, exist_ok=True)
+                results_file = os.path.join(output_dir, "color_matching_results.csv")
+                results_df.to_csv(results_file, index=False)
+                logger.info(f"Progress (including target) saved to {results_file}")
         
         # Final analysis
         logger.info("=" * 60)
@@ -538,7 +459,7 @@ def main():
         logger.info(f"{COLOR_SPACE}: {get_color_str({k.replace('measured_',''):v for k,v in best_result.items() if k.startswith('measured_')})}")        
         logger.info(f"Recipe: R={best_result['R_volume_ml']:.3f}mL, Y={best_result['Y_volume_ml']:.3f}mL, B={best_result['B_volume_ml']:.3f}mL, Water={best_result['Water_volume_ml']:.3f}mL")
         
-        if dispenser.virtual: #TODO: save back to not virtual!
+        if not dispenser.virtual:
             # Save results to CSV inside the workflow output directory
             results_df = pd.DataFrame(results_data)
 
@@ -564,12 +485,12 @@ def main():
             except Exception:
                 logger.exception("Failed to append target RGB row; saving without it.")
 
-            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
             # Ensure the output directory exists
             os.makedirs(output_dir, exist_ok=True)
-            results_file = os.path.join(output_dir, f"color_matching_results_{timestamp}.csv")
+            results_file = os.path.join(output_dir, f"color_matching_results.csv")
             results_df.to_csv(results_file, index=False)
             logger.info(f"Results saved to {results_file}")
+
 
         # Summary statistics
         distances = [r['output'] for r in results_data]

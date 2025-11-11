@@ -74,7 +74,7 @@ class Liquid_Dispenser:
             raise
 
     def dispense_between(self, source_location, source_index, dest_location, dest_index, 
-                        transfer_vol, air_time=0.7, blowout_vol = 0.28, buffer_time=1, speed=32768, mixing_vol = 0, num_mixes=3):
+                        transfer_vol, blowout_vol = 0.28, buffer_time=0.35, speed=32768, mixing_vol = 0, num_mixes=3, mixing_speed = 32768):
         """
         Transfer liquid from a source location to a destination location,
         with optional mixing. Also supports mixing-only without transfer by setting transfer_vol = 0.
@@ -101,33 +101,44 @@ class Liquid_Dispenser:
             num_mixes (int): Number of mixing cycles to perform
         """
         # Volume calculation constants
-        SYRINGE_MAX_VOL = 0.78
+        SYRINGE_MAX_VOL = 0.78  
         transfer_max_vol = SYRINGE_MAX_VOL-blowout_vol  # Maximum volume per dispense in mL (hardware limitation)
-        SLOPE = 0.4003  # Time per mL conversion factor (seconds/mL, from calibration), before: 0.4295
+        speed_time_ratio = 32768/speed  # Speed scaling factor (1.0 at 32768)
+        if int(speed_time_ratio) == 2: 
+            speed_time_ratio = 0.69
+        elif int(speed_time_ratio) == 3:
+            speed_time_ratio = 0.42
+
+        SLOPE = 0.4052  # Time per mL conversion factor (seconds/mL, from calibration), before: 0.4295, 0.4679
         min_vol = 0.025
-        air_time = blowout_vol/SLOPE #air_time for blow out
+        air_time = blowout_vol/(SLOPE*speed_time_ratio) #air_time for blow out
+        MIN_BUFFER_TIME = 0 #0.6 #seconds
+        
 
         self.logger.info(
-            "Starting dispense_between: %s[%d] -> %s[%d], transfer volume=%.3f mL, mixing volume=%.3f", 
-            source_location, source_index, dest_location, dest_index, transfer_vol, mixing_vol
+            "Starting dispense_between: %s[%d] -> %s[%d], transfer volume=%.3f mL, mixing volume=%.3f, buffer_time=%.2f s, blowout_vol=%.3f mL", 
+            source_location, source_index, dest_location, dest_index, transfer_vol, mixing_vol, buffer_time, blowout_vol
         )
         
         if  transfer_vol < min_vol and transfer_vol != 0: #min volume
             self.logger.warning("Invalid transfer volume requested: %.3f mL", transfer_vol)
             return 
-        if  mixing_vol <= 0.025 and mixing_vol != 0: #min volume
+        if  mixing_vol <= min_vol and mixing_vol != 0: #min volume
             self.logger.warning("Invalid mixing volume requested: %.3f mL", mixing_vol)
             return
         if transfer_vol == 0 and mixing_vol == 0:
             self.logger.warning("Nothing to do: both transfer and mixing volumes are zero.")
             return
-            
         
+        if buffer_time < MIN_BUFFER_TIME:
+            self.logger.warning("Invalid BUFFER time requested: %.3f seconds, setting to minimum of %.2f seconds", buffer_time, MIN_BUFFER_TIME)
+            buffer_time = MIN_BUFFER_TIME
+
         if transfer_vol > 0:
         # Calculate how many dispense cycles we need
             num_dispenses = math.ceil(transfer_vol / transfer_max_vol)
             dispense_vol = transfer_vol / num_dispenses  # Volume per individual dispense
-            retract_time = dispense_vol/SLOPE  # Time needed to aspirate this volume
+            retract_time = dispense_vol/(SLOPE*speed_time_ratio) # Time needed to aspirate this volume
             
             
             if transfer_vol > (transfer_max_vol * 10):  # Reasonable upper limit
@@ -158,13 +169,13 @@ class Liquid_Dispenser:
                     self.cnc_machine.move_to_location(source_location, source_index, safe=True)
                     
                     self.logger.debug("Aspirating air buffer: %.2f seconds", air_time)
-                    self.actuator.retract(air_time)
+                    self.actuator.retract(air_time, speed=speed)
                     
                     self.logger.debug("Moving down to aspirate liquid")
                     self.cnc_machine.move_to_aspirate_height(source_location)
                     
                     self.logger.debug("Aspirating liquid: %.2f seconds (%.3f mL)", retract_time, dispense_vol)
-                    self.actuator.retract(retract_time)
+                    self.actuator.retract(retract_time, speed=speed)
 
                     time.sleep(0.5) #wait 1 second before moving up
                     
@@ -178,10 +189,10 @@ class Liquid_Dispenser:
                     
                     total_dispense_time = air_time + retract_time + buffer_time
                     self.logger.debug("Dispensing liquid: %.2f seconds total", total_dispense_time)
-                    self.actuator.extend(total_dispense_time)
+                    self.actuator.extend(total_dispense_time, speed=speed)
 
             if mixing_vol > 0 and num_mixes > 0 and mixing_vol <= transfer_max_vol: #mixing
-                retract_time_mixing = mixing_vol / SLOPE  # Time needed to aspirate this volume (no air gap though)
+                retract_time_mixing = mixing_vol / (SLOPE * speed_time_ratio)  # Time needed to aspirate this volume (no air gap though)
                 total_dispense_time = air_time + retract_time_mixing + buffer_time
 
                  # Move to source and aspirate
@@ -189,30 +200,30 @@ class Liquid_Dispenser:
                 self.cnc_machine.move_to_location(dest_location, dest_index, safe=True)
                 
                 self.logger.debug("Aspirating air buffer: %.2f seconds", air_time)
-                self.actuator.retract(air_time, speed=speed)
-                
+                self.actuator.retract(air_time, speed=mixing_speed)
+
                 self.logger.debug("Moving down to aspirate liquid")
                 self.cnc_machine.move_to_mixing_height(dest_location)
 
                 for mix_cycle in range(num_mixes):  
                     self.logger.debug("Mix cycle %d/3", mix_cycle + 1)
-                    self.actuator.retract(seconds=retract_time_mixing, speed=speed)  # Retract to mix
+                    self.actuator.retract(seconds=retract_time_mixing, speed=mixing_speed)  # Retract to mix
                     time.sleep(0.5)
                     
-                    if mix_cycle == num_mixes -1:
+                    if mix_cycle == num_mixes -1: #last dispense in mixing, dispense all liquid including air buffer
                         self.logger.debug("Moving up to dispense all liquid and air buffer")
                         self.cnc_machine.move_to_dispense_height(dest_location)
 
                         self.logger.debug("Dispensing ALL liquid: %.2f seconds total", total_dispense_time)
-                        self.actuator.extend(seconds=total_dispense_time, speed=speed)  # dispense everything
+                        self.actuator.extend(seconds=total_dispense_time, speed=mixing_speed)  # dispense everything
 
                     else:
                         self.logger.debug("Dispensing liquid: %.2f seconds total", retract_time)
-                        self.actuator.extend(seconds=retract_time_mixing, speed=speed)  # mixing only (keeping air buffer)
-                    
+                        self.actuator.extend(seconds=retract_time_mixing, speed=mixing_speed)  # mixing only (keeping air buffer)
+
                     time.sleep(0.5)
                     
-                    self.logger.info("Mixing complete")
+                self.logger.info("Mixing complete")
                 
             if mixing_vol > transfer_max_vol:
                 self.logger.warning("Mixing volume (%.3f mL) exceeds maximum per dispense (%.3f mL); skipping mixing", mixing_vol, transfer_max_vol)
@@ -232,100 +243,100 @@ class Liquid_Dispenser:
                 self.logger.error("Failed to stop actuator after error")
             raise
 
-    def condition_needle(self, source_location, source_index, dest_location, dest_index, num_conditions = 1, vol_pipet=0.5, air_time=0.7, buffer_time=1, speed=32768):
+    def condition_needle(self, source_location, source_index, dest_location, dest_index, num_conditions = 1, vol_pipet=0.5, buffer_time=0.35, speed=32768):
         """
         Condition the syringe by aspirating from the source location and dispensing into waste
         Args:
         condition_repeats: the number of time to condition
         """
         for i in range(num_conditions):
-            self.dispense_between(source_location, source_index, dest_location, dest_index, vol_pipet, air_time, buffer_time, speed=speed)
+            self.dispense_between(source_location, source_index, dest_location, dest_index, vol_pipet, buffer_time, speed=speed)
 
-    def rinse_needle(self, wash_location, wash_index,vol_pipet=0.5, air_time=0.7, buffer_time=1, speed=32768, num_mixes = 3):
+    def rinse_needle(self, wash_location, wash_index,vol_pipet=0.5, buffer_time=0.35, speed=32768, num_mixes = 3):
         """
         Rinsing the syringe in the wash station. Note that it is expected to aspirate and dispense from the same well.
         num_mixes: the number of times to mix inside of well
         """
-        self.dispense_between(source_location=wash_location, source_index=wash_index, transfer_vol=0, dest_location=wash_location, dest_index=wash_index, mixing_vol=vol_pipet, air_time=air_time, buffer_time=buffer_time, speed=speed,num_mixes=num_mixes)
+        self.dispense_between(source_location=wash_location, source_index=wash_index, transfer_vol=0, dest_location=wash_location, dest_index=wash_index, mixing_vol=vol_pipet, buffer_time=buffer_time, speed=speed,num_mixes=num_mixes)
 
 
-    def dispense_condition(self, source_location, source_index, dest_location="vial_rack", 
-                          dest_index=6, vol_pipet=0.5, air_time=0.7, buffer_time=1, speed=32768):
-        """
-        Condition the pipette by aspirating and dispensing to waste.
+    # def dispense_condition(self, source_location, source_index, dest_location="vial_rack", 
+    #                       dest_index=6, vol_pipet=0.5, buffer_time=1, speed=32768):
+    #     """
+    #     Condition the pipette by aspirating and dispensing to waste.
         
-        This method prepares the pipette for accurate dispensing by:
-        1. Aspirating liquid from source to prime the tip
-        2. Dispensing to waste location (typically for conditioning)
-        3. Repeating the process multiple times to ensure accuracy
+    #     This method prepares the pipette for accurate dispensing by:
+    #     1. Aspirating liquid from source to prime the tip
+    #     2. Dispensing to waste location (typically for conditioning)
+    #     3. Repeating the process multiple times to ensure accuracy
         
-        Args:
-            source_location (str): Source location for conditioning liquid
-            source_index (int): Index within source location  
-            dest_location (str): Waste/destination location (default: "vial_rack")
-            dest_index (int): Index for waste location (default: 6)
-            vol_pipet (float): Volume for conditioning in mL
-            air_time (float): Time to aspirate air buffer in seconds
-            buffer_time (float): Extra time for complete dispensing in seconds
-            speed (int): Actuator speed (0-65535)
-        """
-        # Volume calculation constants
-        max_vol = 0.5  # Maximum volume per dispense in mL
-        slope = 0.4003  # Time per mL conversion factor (seconds/mL) before: 0.4295
+    #     Args:
+    #         source_location (str): Source location for conditioning liquid
+    #         source_index (int): Index within source location  
+    #         dest_location (str): Waste/destination location (default: "vial_rack")
+    #         dest_index (int): Index for waste location (default: 6)
+    #         vol_pipet (float): Volume for conditioning in mL
+    #         air_time (float): Time to aspirate air buffer in seconds
+    #         buffer_time (float): Extra time for complete dispensing in seconds
+    #         speed (int): Actuator speed (0-65535)
+    #     """
+    #     # Volume calculation constants
+    #     max_vol = 0.5  # Maximum volume per dispense in mL
+    #     slope = 0.4003  # Time per mL conversion factor (seconds/mL) before: 0.4295
         
-        self.logger.info(
-            "Starting conditioning: %s[%d] -> %s[%d], volume=%.3f mL", 
-            source_location, source_index, dest_location, dest_index, vol_pipet
-        )
+    #     self.logger.info(
+    #         "Starting conditioning: %s[%d] -> %s[%d], volume=%.3f mL", 
+    #         source_location, source_index, dest_location, dest_index, vol_pipet
+    #     )
         
-        # Calculate dispense parameters
-        num_dispenses = math.ceil(vol_pipet / max_vol)
-        dispense_vol = vol_pipet / num_dispenses
-        retract_time = dispense_vol * slope
+    #     # Calculate dispense parameters
+    #     num_dispenses = math.ceil(vol_pipet / max_vol)
+    #     dispense_vol = vol_pipet / num_dispenses
+    #     retract_time = dispense_vol * slope
         
-        self.logger.debug(
-            "Conditioning calculations: num_dispenses=%d, vol_per_dispense=%.3f, retract_time=%.2f",
-            num_dispenses, dispense_vol, retract_time
-        )
+    #     self.logger.debug(
+    #         "Conditioning calculations: num_dispenses=%d, vol_per_dispense=%.3f, retract_time=%.2f",
+    #         num_dispenses, dispense_vol, retract_time
+    #     )
         
-        try:
-            # Perform conditioning cycles (typically 3 cycles for good priming)
-            for cycle in range(3):
-                self.logger.debug("Conditioning cycle %d/3", cycle + 1)
+    #     try:
+    #         # Perform conditioning cycles (typically 3 cycles for good priming)
+    #         for cycle in range(3):
+    #             self.logger.debug("Conditioning cycle %d/3", cycle + 1)
                 
-                self.logger.debug("Moving to source: %s[%d]", source_location, source_index)
-                self.cnc_machine.move_to_location(source_location, source_index, safe=True)
+    #             self.logger.debug("Moving to source: %s[%d]", source_location, source_index)
+    #             self.cnc_machine.move_to_location(source_location, source_index, safe=True)
                 
-                self.logger.debug("Aspirating air buffer: %.2f seconds", air_time)
-                self.actuator.retract(air_time, speed=speed)
+    #             # self.logger.debug("Aspirating air buffer: %.2f seconds", air_time)
+    #             # self.actuator.retract(air_time, speed=speed)
                 
-                self.logger.debug("Moving down to aspirate conditioning liquid")
-                #self.cnc_machine.move_to_point(z=-64) #z=-70 before
-                self.cnc_machine.move_to_aspirate_height(source_location)
+    #             self.logger.debug("Moving down to aspirate conditioning liquid")
+    #             #self.cnc_machine.move_to_point(z=-64) #z=-70 before
+    #             self.cnc_machine.move_to_aspirate_height(source_location)
                 
-                self.logger.debug("Aspirating conditioning liquid: %.2f seconds", retract_time)
-                self.actuator.retract(retract_time, speed=speed)
+    #             self.logger.debug("Aspirating conditioning liquid: %.2f seconds", retract_time)
+    #             self.actuator.retract(retract_time, speed=speed)
                 
-                self.logger.debug("Moving up from source")
-                self.cnc_machine.move_to_point(z=0)
+    #             self.logger.debug("Moving up from source")
+    #             self.cnc_machine.move_to_point(z=0)
                 
-                self.logger.debug("Moving to waste: %s[%d]", dest_location, dest_index)
-                self.cnc_machine.move_to_location(dest_location, dest_index, safe=True)
+    #             self.logger.debug("Moving to waste: %s[%d]", dest_location, dest_index)
+    #             self.cnc_machine.move_to_location(dest_location, dest_index, safe=True)
                 
-                total_dispense_time = air_time + retract_time + buffer_time
-                self.logger.debug("Dispensing to waste: %.2f seconds total", total_dispense_time)
-                self.actuator.extend(total_dispense_time, speed=speed)
+    #             total_dispense_time =  retract_time + buffer_time #+ air_time
+    #             self.logger.debug("Dispensing to waste: %.2f seconds total", total_dispense_time)
+    #             self.actuator.extend(total_dispense_time, speed=speed)
                 
-            self.logger.debug("Conditioning completed successfully")
+    #         self.logger.debug("Conditioning completed successfully")
             
-        except Exception as e:
-            self.logger.error("Conditioning failed: %s", e)
-            try:
-                self.actuator.stop()
-                self.logger.info("Actuator stopped for safety")
-            except:
-                self.logger.error("Failed to stop actuator after conditioning error")
-            raise
+    #     except Exception as e:
+    #         self.logger.error("Conditioning failed: %s", e)
+    #         try:
+    #             self.actuator.stop()
+    #             self.logger.info("Actuator stopped for safety")
+    #         except:
+    #             self.logger.error("Failed to stop actuator after conditioning error")
+    #         raise
     
     def move_to_origin(self):
         """
@@ -429,8 +440,7 @@ class Liquid_Dispenser:
                 try:
                     self.logger.debug("Analyzing image for %s values", color_space)
                     color = self.camera.average_color_in_center(image_path, square_size,
-                                                           show_crop=True, save_crop=True, color_space=color_space)
-                    print("COLORRR: %s", color)
+                                                           show_crop=False, save_crop=True, color_space=color_space)
                     if color_space == "RGB":
                         self.logger.info("RGB analysis completed: (%.1f, %.1f, %.1f)", color["R"], color["G"], color["B"])
                     elif color_space == "RGBA":

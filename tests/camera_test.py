@@ -9,3 +9,4 @@ os.makedirs(output_dir, exist_ok=True)
 
 camera = Camera (1, output_dir)
 camera.capture_and_save("_test")
+camera.cleanup()
