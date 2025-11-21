@@ -109,7 +109,7 @@ class Liquid_Dispenser:
         elif int(speed_time_ratio) == 3:
             speed_time_ratio = 0.42
 
-        SLOPE = 0.4052  # Time per mL conversion factor (seconds/mL, from calibration), before: 0.4295, 0.4679
+        SLOPE = 0.369  # Time per mL conversion factor (seconds/mL, from calibration), before: 0.4295, 0.4679, 0.4052
         min_vol = 0.025
         air_time = blowout_vol/(SLOPE*speed_time_ratio) #air_time for blow out
         MIN_BUFFER_TIME = 0 #0.6 #seconds
@@ -177,7 +177,8 @@ class Liquid_Dispenser:
                     self.logger.debug("Aspirating liquid: %.2f seconds (%.3f mL)", retract_time, dispense_vol)
                     self.actuator.retract(retract_time, speed=speed)
 
-                    time.sleep(0.5) #wait 1 second before moving up
+                    if not self.virtual:
+                        time.sleep(0.5) #wait 1 second before moving up
                     
                     self.logger.debug("Moving up from source")
                     self.cnc_machine.move_to_point(z=0)
@@ -208,7 +209,8 @@ class Liquid_Dispenser:
                 for mix_cycle in range(num_mixes):  
                     self.logger.debug("Mix cycle %d/3", mix_cycle + 1)
                     self.actuator.retract(seconds=retract_time_mixing, speed=mixing_speed)  # Retract to mix
-                    time.sleep(0.5)
+                    if not self.virtual:
+                        time.sleep(0.5)
                     
                     if mix_cycle == num_mixes -1: #last dispense in mixing, dispense all liquid including air buffer
                         self.logger.debug("Moving up to dispense all liquid and air buffer")
@@ -221,7 +223,8 @@ class Liquid_Dispenser:
                         self.logger.debug("Dispensing liquid: %.2f seconds total", retract_time)
                         self.actuator.extend(seconds=retract_time_mixing, speed=mixing_speed)  # mixing only (keeping air buffer)
 
-                    time.sleep(0.5)
+                    if not self.virtual:
+                        time.sleep(0.5)
                     
                 self.logger.info("Mixing complete")
                 
@@ -250,7 +253,7 @@ class Liquid_Dispenser:
         condition_repeats: the number of time to condition
         """
         for i in range(num_conditions):
-            self.dispense_between(source_location, source_index, dest_location, dest_index, vol_pipet, buffer_time, speed=speed)
+            self.dispense_between(source_location = source_location, source_index=source_index, dest_location=dest_location, dest_index=dest_index, transfer_vol=vol_pipet, buffer_time=buffer_time, speed=speed, blowout_vol=0.28)
 
     def rinse_needle(self, wash_location, wash_index,vol_pipet=0.5, buffer_time=0.35, speed=32768, num_mixes = 3):
         """
@@ -357,7 +360,7 @@ class Liquid_Dispenser:
             self.logger.error("Failed to move to origin: %s", e)
             raise
 
-    def get_image_color(self, location, location_index, image_suffix, square_size=100, color_space="RGB"):
+    def get_image_color(self, location, location_index, image_suffix, square_size=100, color_space="RGB", show_crop=False):
         """
         Capture an image at a specific location and analyze its RGB values.
         
@@ -381,50 +384,6 @@ class Liquid_Dispenser:
             location, location_index, image_suffix
         )
         
-        # Handle virtual mode with dummy RGB values
-        # if self.virtual:
-        #     import random
-            
-        #     # Provide realistic dummy values for different scenarios
-        #     if location_index == 0 and location == "well_plate":
-        #         # Target sample - use a consistent "target" color (purple-ish)
-        #         dummy_rgb = (128, 64, 192)
-        #         self.logger.info("[VIRTUAL] Using target sample RGB: (%.1f, %.1f, %.1f)", *dummy_rgb)
-        #     else:
-        #         # Experimental wells - generate varied colors with some randomness
-        #         # but keep them in realistic ranges for color mixing
-        #         base_r = random.randint(80, 180)
-        #         base_g = random.randint(60, 160) 
-        #         base_b = random.randint(70, 170)
-
-        #         if color_space == "RGBA":
-        #             base_a = random.randint(10, 150)
-        #             dummy_color = {"R": base_r, "G": base_g, "B": base_b, "A": base_a}
-        #             self.logger.info("[VIRTUAL] Using simulated RGBA: (%.1f, %.1f, %.1f, %.1f)", *dummy_color.values())
-        #         elif color_space == "LAB":
-        #             # Simulate LAB values within typical ranges
-        #             L = random.randint(20, 80)   # Lightness
-        #             a = random.randint(-40, 40)  # Green-Red
-        #             b = random.randint(-40, 40)  # Blue-Yellow
-        #             dummy_color = {"L": L, "A": a, "B": b}
-        #             self.logger.info("[VIRTUAL] Using simulated LAB: (%.1f, %.1f, %.1f)", *dummy_color.values())
-        #         elif color_space == "HSV":
-        #             # Simulate HSV values within typical ranges
-        #             H = random.randint(0, 360)   # Hue
-        #             S = random.randint(40, 100)  # Saturation
-        #             V = random.randint(40, 100)  # Value
-        #             dummy_color = {"H": H, "S": S, "V": V}
-        #             self.logger.info("[VIRTUAL] Using simulated HSV: (%.1f, %.1f, %.1f)", *dummy_color.values())
-        #         elif color_space == "RGB":
-        #             dummy_color = {"R": base_r, "G": base_g, "B": base_b}
-        #             self.logger.info("[VIRTUAL] Using simulated RGB: (%.1f, %.1f, %.1f)", *dummy_color.values())
-        #         else:
-        #             self.logger.error("Unsupported color mode: %s", color_space)
-        #             raise ValueError(f"Unsupported color mode: {color_space}")
-
-                
-        #     return dummy_color
-        
         # Real hardware mode
         try:
             # Move to the specified location for imaging
@@ -440,7 +399,7 @@ class Liquid_Dispenser:
                 try:
                     self.logger.debug("Analyzing image for %s values", color_space)
                     color = self.camera.average_color_in_center(image_path, square_size,
-                                                           show_crop=False, save_crop=True, color_space=color_space)
+                                                           show_crop=show_crop, save_crop=True, color_space=color_space)
                     if color_space == "RGB":
                         self.logger.info("RGB analysis completed: (%.1f, %.1f, %.1f)", color["R"], color["G"], color["B"])
                     elif color_space == "RGBA":

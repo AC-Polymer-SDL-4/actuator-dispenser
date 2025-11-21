@@ -22,11 +22,11 @@ def initialize_campaign(upper_bound, random_seed, random_recs=False):
     objective = SingleTargetObjective(target=target)
 
     parameters = [
-        NumericalDiscreteParameter(
-            name = 'Water',
-            values = np.array(range(0, 1000, 50))
-            #encoding = 'INT'
-            ),
+        # NumericalDiscreteParameter(
+        #     name = 'Water',
+        #     values = np.array(range(0, 1000, 50))
+        #     #encoding = 'INT'
+        #     ),
         NumericalDiscreteParameter(
             name = 'R',
             values = np.array(range(0, 1000, 50)),
@@ -45,7 +45,7 @@ def initialize_campaign(upper_bound, random_seed, random_recs=False):
     ]
 
     constraints = [DiscreteSumConstraint(
-            parameters=["Water", "R", "Y", "B"],  # these parameters must exist in the search space
+            parameters=["R", "Y", "B"],  # these parameters must exist in the search space -- if 4 solutions: parameters=["Water", "R", "Y", "B"]
             condition=ThresholdCondition(  # set condition that should apply to the sum
             threshold=1000,
             operator="="))]

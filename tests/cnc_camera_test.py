@@ -13,7 +13,7 @@ output_dir = os.path.join("output", workflow_name, timestamp)
 virtual = False
 dispenser = Liquid_Dispenser(cnc_comport="COM4", 
                              actuator_comport="COM3", 
-                             camera_index=1, 
+                             camera_index=0, 
                              virtual=virtual,
                              output_dir=output_dir)
 dispenser.cnc_machine.Z_LOW_BOUND = -70 #Just in this case
@@ -22,9 +22,9 @@ dispenser.cnc_machine.Z_LOW_BOUND = -70 #Just in this case
 
 #df = pd.DataFrame()
 
-# for i in range(12):
+# for i in range(6):
 #     try:
-#         r, g, b = dispenser.get_image_rgb("well_plate_camera", i, f"_{i}", square_size=75)
+#         r, g, b = dispenser.get_image_color("well_plate_camera", i, f"_{i}", square_size=60)
 #         # Add RGB values to the existing DataFrame
 #         df.loc[i, 'Red'] = r
 #         df.loc[i, 'Green'] = g
@@ -35,11 +35,6 @@ dispenser.cnc_machine.Z_LOW_BOUND = -70 #Just in this case
 #             print(f"Cannot capture image for well {i}: {e}")
 #         continue
 
-
-for i in range(1):
-    dispenser.get_image_rgb("well_plate_camera", 0, f"_{i}", square_size=75)
-
-
 # Save DataFrame to CSV
 # if not virtual:
 #     print (df)
@@ -47,6 +42,12 @@ for i in range(1):
 #     df.to_csv(os.path.join(output_dir,output_csv), index=False) 
 #     # Save DataFrame to CSV
 #     print(f"Data saved to {output_csv}")
+
+
+for i in range(6):
+    color = dispenser.get_image_color("well_plate_camera",i, f"_{i}", square_size=60, show_crop=True)
+    print(f"Color measurement well {i}: {color}")
+
 
 #closing
 dispenser.cnc_machine.close()

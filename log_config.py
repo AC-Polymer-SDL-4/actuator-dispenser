@@ -7,6 +7,7 @@ import logging
 import os
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
+from venv import logger
 
 # Global variable to store the current workflow name
 current_workflow = None
@@ -48,8 +49,14 @@ def setup_logger(module_name, virtual=False, log_level=logging.INFO):
     logger = logging.getLogger(logger_name)
     
     # Prevent duplicate handlers if logger already exists
-    if logger.handlers:
-        return logger
+    # if logger.handlers:
+    #     return logger
+    
+    # Always clear existing handlers so they don't block workflow file handler (so camera will log to same file (opencv opens its own handlers otherwise))
+    for h in list(logger.handlers):
+        logger.removeHandler(h)
+        try: h.close()
+        except: pass
     
     logger.setLevel(log_level)
     
