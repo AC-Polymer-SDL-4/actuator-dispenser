@@ -192,7 +192,7 @@ def main():
         # Initialize Bayesian optimization campaign
         logger.info("Initializing Bayesian optimization campaign...")
         campaign, searchspace = initialize_campaign(
-            upper_bound=max_distance,
+            upper_bound=30,
             random_seed=RANDOM_SEED,
             random_recs=False
         )
