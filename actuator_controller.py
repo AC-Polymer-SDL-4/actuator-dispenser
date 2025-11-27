@@ -104,6 +104,10 @@ class ActuatorRemote:
 
     def _send_and_wait_stop(self, line, expected_secs, extra=0.5):
         # send the command
+        if self.virtual:
+            log_virtual_action(self.logger, f"Would send: {line!r}")
+            log_method_exit(self.logger, "_send", "virtual")
+            return "OK:VIRTUAL"
         resp = self._send(line)
         # now wait until Arduino reports it's done, or timeout
         deadline = time.time() + float(expected_secs) + float(extra)

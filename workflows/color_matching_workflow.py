@@ -32,18 +32,24 @@ import pandas as pd
 import numpy as np
 import time
 import logging
+import os
+import datetime
+import cv2
 
-from datetime import datetime
 
 # Workflow configuration
-INITIAL_BATCH_SIZE = 5  # First batch of wells to create
-SUBSEQUENT_BATCH_SIZE = 3  # Size of subsequent batches
-MAX_WELLS = 14  # Maximum number of wells on plate
-TARGET_WELL = 0  # Well containing the target sample
+INITIAL_BATCH_SIZE = 5  # First batch of wells to create (5)
+SUBSEQUENT_BATCH_SIZE = 3  # Size of subsequent batches (3)
+MAX_WELLS = 8  # Maximum number of wells on plate (24)
+TARGET_WELL = 0  # Index of well containing the target sample
 RANDOM_SEED = 42
-RGBA = False
 
-VIRTUAL = False
+VIRTUAL = True
+WITHOUT_WATER = True
+
+# Choose color space for matching: 'RGB', 'RGBA', 'HSV', or 'LAB'
+COLOR_SPACE = 'HSV'
+COLOR_SPACE = COLOR_SPACE.upper() #just to make sure it's in uppercase
 
 # Reservoir mapping
 RESERVOIRS = {
@@ -52,14 +58,67 @@ RESERVOIRS = {
     'Y': 2,      # Blue colorant
     'Water': 3,  # Water/diluent
     'wash': 4,   # Wash solution
-    'waste': 5   # Waste container
+    'condition_water_1': 5,   # Condition water
+    'condition_waste_1': 6,   # Condition waste
+    'condition_water_2': 7,   # Second condition water (if needed)
+    'condition_waste_2': 8,   # Second condition waste (if needed)
+    'waste': 9   # Waste container
 }
+
+SPEED = 32768  #default speed for dispensing (32768/2 with old syringe)
+RINSE_SPEED = 32768 #(32768*1.25 for old syringe)
+CONDITION_BEFORE_RINSE = True  #Whether to do a condition step before rinsing (for concentrated solutions -- or else rinse solution will be very contaminated)
+
+# Get workflow name (file name without extension)
+workflow_name = os.path.splitext(os.path.basename(__file__))[0]
+timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+output_dir = os.path.join("output", workflow_name, f"{timestamp}_{COLOR_SPACE}")
+
 
 def rgb_distance(rgb1, rgb2):
     """Calculate Euclidean distance between two RGB colors."""
     return np.sqrt(sum((c1 - c2) ** 2 for c1, c2 in zip(rgb1, rgb2)))
 
-def volumes_to_milliliters(volumes_dict, total_volume_ml=3.0):
+def hue_distance_deg(h1, h2):
+    d = abs(h1 - h2) % 360
+    if d > 180:
+        d = 360 - d
+    return d
+
+def hsv_distance(hsv1, hsv2, weights=(0.6, 0.2, 0.2)):
+    if hsv1 is None or hsv2 is None:
+        return float('inf')
+    h1, s1, v1 = hsv1
+    h2, s2, v2 = hsv2
+    dh = hue_distance_deg(h1, h2) / 180.0
+    ds = abs(s1 - s2)
+    dv = abs(v1 - v2)
+    w_h, w_s, w_v = weights
+    return np.sqrt((w_h * dh) ** 2 + (w_s * ds) ** 2 + (w_v * dv) ** 2)
+
+def lab_distance(lab1, lab2):
+    if lab1 is None or lab2 is None:
+        return float('inf')
+    return np.sqrt(sum((float(a) - float(b)) ** 2 for a, b in zip(lab1, lab2)))
+
+def get_color_distance(target_col, sample_col, color_space=COLOR_SPACE):
+    target_col = tuple(target_col.values())
+    sample_col = tuple(sample_col.values())
+
+    if color_space == 'RGB' or color_space == 'RGBA':
+        return rgb_distance(target_col, sample_col)
+    elif color_space == 'HSV':
+        return hsv_distance(target_col, sample_col)
+    elif color_space == 'LAB':
+        return lab_distance(target_col, sample_col)
+    else:
+        return None
+
+def get_color_str(color_dict): #outputs a string representation of color dict (universal for all color spaces)
+    return ", ".join(f"{k}={float(v):.3f}" for k, v in color_dict.items())
+
+
+def volumes_to_milliliters(volumes_dict, total_volume_ml=1.0):
     """
     Convert optimizer volume units to milliliters.
     
@@ -103,15 +162,8 @@ def create_mixture_at_well(dispenser, well_index, volumes_ml, logger):
             reservoir_index = RESERVOIRS[component]
             logger.info(f"Dispensing {volume_ml:.3f}mL of {component} from reservoir {reservoir_index}")
 
-            dispenser.condition_needle(
-                source_location="reservoir_12", 
-                source_index=reservoir_index,
-                dest_location="reservoir_12",
-                dest_index=RESERVOIRS["waste"],
-                num_conditions = 1)
-
             if component == last_component:
-                dispense_mix_volume=0.5
+                dispense_mix_volume=0.4
             else:
                 dispense_mix_volume=0
 
@@ -122,16 +174,35 @@ def create_mixture_at_well(dispenser, well_index, volumes_ml, logger):
                 dest_index=well_index,
                 transfer_vol=volume_ml,  # Now in mL as expected
                 mixing_vol=dispense_mix_volume,
+                num_mixes = 5 if component == last_component else 0,
+                speed = SPEED,
             )
+
+            if CONDITION_BEFORE_RINSE:
+                vol_pipet = min(volume_ml+0.1, 0.5) #maximum pipet volume 0.5mL
+                if well_index > MAX_WELLS/2:
+                    i = 2
+                else:
+                    i = 1
+                dispenser.condition_needle(
+                    source_location="reservoir_12", 
+                    source_index=RESERVOIRS[f'condition_water_{i}'],
+                    dest_location="reservoir_12",
+                    dest_index=RESERVOIRS[f'condition_waste_{i}'],
+                    vol_pipet = vol_pipet,
+                    speed = SPEED,
+                    num_conditions = 1)
 
             dispenser.rinse_needle(
                 wash_location="reservoir_12", 
                 wash_index=RESERVOIRS['wash'], 
-                num_mixes=3
+                num_mixes=3,
+                speed=RINSE_SPEED
             )
             
             # Small delay between dispenses
-            time.sleep(0.5)
+            if not VIRTUAL:
+                time.sleep(0.5)
 
 def condition_system(dispenser, logger):
     """
@@ -146,6 +217,8 @@ def condition_system(dispenser, logger):
         dest_index=RESERVOIRS['waste']
     )
 
+
+
 def main():
     """Main color matching workflow."""
     
@@ -159,10 +232,11 @@ def main():
     logger.info("Initializing hardware...")
     dispenser = Liquid_Dispenser(
         cnc_comport="COM4", 
-        actuator_comport="COM3",
+        actuator_comport="COM3", #non-gaming computer
         virtual=VIRTUAL,  # Set to False for real hardware
-        camera_index=1, 
-        log_level=logging.INFO
+        camera_index=0, #for non-gaming computer
+        log_level=logging.INFO,
+        output_dir=output_dir
     )
     dispenser.cnc_machine.Z_LOW_BOUND = -70  # Adjust as needed
     dispenser.cnc_machine.home() #Home machine
@@ -177,22 +251,20 @@ def main():
         slack_agent.send_slack_message("Color Matching Workflow started on real hardware.", SLACK_CHANNEL)
 
     try:
-        # Step 1: Read target RGB from well 0
-        logger.info("Step 1: Reading target RGB values from sample at well 0")
-        target_rgb = dispenser.get_image_rgb("well_plate_camera", TARGET_WELL, "target_sample", square_size=60, rgba = RGBA)
-        
-        if RGBA:
-            logger.info(f"Target RGB values: R={target_rgb[0]}, G={target_rgb[1]}, B={target_rgb[2]}, alpha={target_rgb[3]}")
-        else:
-            logger.info(f"Target RGB values: R={target_rgb[0]}, G={target_rgb[1]}, B={target_rgb[2]}")
-        
-        # Calculate upper bound for optimization (max possible distance)
+        # Step 1: Read target color from well 0
+        logger.info("Step 1: Reading target color values from sample at well 0")
+        target_color = dispenser.get_image_color("well_plate_camera", TARGET_WELL, "target_sample", square_size=60, color_space=COLOR_SPACE, show_crop=True)
+
+
+        logger.info(f"Target {COLOR_SPACE} values: {get_color_str(target_color)}") #log the target color values
+
+        # Calculate upper bound for optimization (max possible distance) - keep RGB max for optimizer scaling
         max_distance = rgb_distance([0, 0, 0], [255, 255, 255])  # Max possible RGB distance
-        
+
         # Initialize Bayesian optimization campaign
         logger.info("Initializing Bayesian optimization campaign...")
         campaign, searchspace = initialize_campaign(
-            upper_bound=30,
+            upper_bound=50,
             random_seed=RANDOM_SEED,
             random_recs=False
         )
@@ -218,58 +290,69 @@ def main():
                 'R': suggestion['R'],
                 'Y': suggestion['Y'], 
                 'B': suggestion['B'],
-                'Water': suggestion['Water']
+                'Water': suggestion['Water'] if not WITHOUT_WATER else 0 #adds 0 for no water
             }
+
             volumes_ml = volumes_to_milliliters(volumes_dict)
             
             # Create mixture
             create_mixture_at_well(dispenser, current_well, volumes_ml, logger)
             
-            # Condition system after each mixture
-            #condition_system(dispenser, logger)
-            
             # Store experiment details
             results_data.append({
                 'well': current_well,
-                'R_volume_ml': volumes_ml['R'],
-                'Y_volume_ml': volumes_ml['Y'],
-                'B_volume_ml': volumes_ml['B'], 
-                'Water_volume_ml': volumes_ml['Water'],
-                'R': suggestion['R'],  # Original optimizer values
-                'Y': suggestion['Y'],
-                'B': suggestion['B'],
-                'Water': suggestion['Water']
+                'R_volume_ml': round(volumes_ml['R'], 2),
+                'Y_volume_ml': round(volumes_ml['Y'], 2),
+                'B_volume_ml': round(volumes_ml['B'], 2),
+                'Water_volume_ml': round(volumes_ml['Water'], 2) if not WITHOUT_WATER else 0, #adds 0 for no water
+                # 'R': suggestion['R'],  # Original optimizer values
+                # 'Y': suggestion['Y'],
+                # 'B': suggestion['B'],
+                # 'Water': suggestion['Water']
             })
             
             current_well += 1
         
         # Step 3: Analyze RGB of initial wells
         logger.info("Step 3: Analyzing RGB values of initial wells...")
-        time.sleep(2)  # Allow time for mixing
         
         results_list = []
         for i, result in enumerate(results_data):
             well_idx = result['well']
             logger.debug(f"Analyzing RGB for well {well_idx}")
             
-            well_rgb = dispenser.get_image_rgb("well_plate_camera", well_idx, f"experiment_{well_idx}", square_size=60, rgba = RGBA)
-            result['measured_R'] = well_rgb[0]
-            result['measured_G'] = well_rgb[1] 
-            result['measured_B'] = well_rgb[2]
-
-            if RGBA:
-                result['measured_alpha'] = well_rgb[3]
+            well_color = dispenser.get_image_color("well_plate_camera", well_idx, f"experiment_{well_idx}", square_size=60, color_space=COLOR_SPACE)
             
-            # Calculate distance to target (this is what we want to minimize)
-            distance = rgb_distance(target_rgb, well_rgb)
+            for key, value in well_color.items(): #store the resulting color values
+                result[f'measured_{key}'] = round(value, 2)
+
+            distance = get_color_distance(target_color, well_color, color_space=COLOR_SPACE)
+
             results_list.append(distance)  # Store for adding to suggestions DataFrame
             result['output'] = distance  # Store in our tracking data
             
-            if RGBA == False:
-                logger.info(f"Well {well_idx}: RGB=({well_rgb[0]:.0f}, {well_rgb[1]:.0f}, {well_rgb[2]:.0f}), Distance={distance:.1f}")
-            else:
-                logger.info(f"Well {well_idx}: RGBA=({well_rgb[0]:.0f}, {well_rgb[1]:.0f}, {well_rgb[2]:.0f}), {well_rgb[3]:.0f}), Distance={distance:.1f}")
-        
+            logger.info(f"Well {well_idx}: {COLOR_SPACE}={get_color_str(well_color)}, Distance={distance:.1f}") #Outputting the RGB values for logging
+            
+            if not dispenser.virtual:
+                results_df = pd.DataFrame(results_data)
+
+                # Append target color as a reference row
+                target_row = {}
+                for col in results_df.columns:
+                    if col == 'well':
+                        target_row[col] = "Target"
+                    elif col.startswith("measured_"):
+                        channel = col.replace("measured_", "")
+                        target_row[col] = target_color.get(channel, np.nan)
+                    else:
+                        target_row[col] = np.nan
+                results_df = pd.concat([results_df, pd.DataFrame([target_row])], ignore_index=True)
+
+                os.makedirs(output_dir, exist_ok=True)
+                results_file = os.path.join(output_dir, "color_matching_results.csv")
+                results_df.to_csv(results_file, index=False)
+                logger.info(f"Progress (including target) saved to {results_file}")
+
         # Add results to the suggestions dataframe (this is what the optimizer expects)
         initial_suggestions['output'] = results_list
         campaign_data = initial_suggestions.copy()  # Track all experiments
@@ -304,7 +387,7 @@ def main():
                     'R': suggestion['R'],
                     'Y': suggestion['Y'],
                     'B': suggestion['B'], 
-                    'Water': suggestion['Water']
+                    'Water': suggestion['Water'] if not WITHOUT_WATER else 0
                 }
                 volumes_ml = volumes_to_milliliters(volumes_dict)
                 
@@ -314,39 +397,37 @@ def main():
                 # Store results
                 batch_result = {
                     'well': current_well,
-                    'R_volume_ml': volumes_ml['R'],
-                    'Y_volume_ml': volumes_ml['Y'],
-                    'B_volume_ml': volumes_ml['B'],
-                    'Water_volume_ml': volumes_ml['Water'], 
-                    'R': suggestion['R'],
-                    'Y': suggestion['Y'],
-                    'B': suggestion['B'],
-                    'Water': suggestion['Water']
+                    'R_volume_ml': round(volumes_ml['R'], 2),
+                    'Y_volume_ml': round(volumes_ml['Y'], 2),
+                    'B_volume_ml': round(volumes_ml['B'], 2),
+                    'Water_volume_ml': round(volumes_ml['Water'], 2) if not WITHOUT_WATER else 0, #adds 0 for no water
+                    # 'R': suggestion['R'],
+                    # 'Y': suggestion['Y'],
+                    # 'B': suggestion['B'],
+                    # 'Water': suggestion['Water']
                 }
                 batch_results.append(batch_result)
                 current_well += 1
             
             # Analyze new wells
             logger.info(f"Analyzing RGB values for batch {batch_number}...")
-            time.sleep(2)
+            if not VIRTUAL:
+                time.sleep(2)
             
             for i, result in enumerate(batch_results):
                 well_idx = result['well'] 
-                well_rgb = dispenser.get_image_rgb("well_plate_camera", well_idx, f"experiment_{well_idx}", square_size=60, rgba=RGBA)
+                well_color = dispenser.get_image_color("well_plate_camera", well_idx, f"experiment_{well_idx}", square_size=60, color_space=COLOR_SPACE)
                 
-                result['measured_R'] = well_rgb[0]
-                result['measured_G'] = well_rgb[1]
-                result['measured_B'] = well_rgb[2]
+                for key, value in well_color.items(): #store the resulting color values
+                    result[f'measured_{key}'] = round(value, 2)
 
-                if RGBA:
-                    result['measured_alpha'] = well_rgb[3]
-                
-                distance = rgb_distance(target_rgb, well_rgb)
-                result['output'] = distance
-                results_list.append(distance)
-                
-                logger.info(f"Well {well_idx}: RGB=({well_rgb[0]:.0f}, {well_rgb[1]:.0f}, {well_rgb[2]:.0f}), Distance={distance:.1f}")
-            
+                distance = get_color_distance(target_color, well_color, color_space=COLOR_SPACE)
+
+                results_list.append(distance)  # Store for adding to suggestions DataFrame
+                result['output'] = distance  # Store in our tracking data
+
+                logger.info(f"Well {well_idx}: {COLOR_SPACE}={get_color_str(well_color)}, Distance={distance:.1f}")
+
             # Add results to the new suggestions and combine with campaign data
             new_suggestions['output'] = results_list
             campaign_data = pd.concat([campaign_data, new_suggestions], ignore_index=True)
@@ -354,6 +435,27 @@ def main():
             # Add batch results to overall results tracking
             results_data.extend(batch_results)
             batch_number += 1
+
+            # Save partial CSV after each batch (overwrite same file)
+            if dispenser.virtual:
+                results_df = pd.DataFrame(results_data)
+
+                # Append target color as a reference row
+                target_row = {}
+                for col in results_df.columns:
+                    if col == 'well':
+                        target_row[col] = "Target"
+                    elif col.startswith("measured_"):
+                        channel = col.replace("measured_", "")
+                        target_row[col] = target_color.get(channel, np.nan)
+                    else:
+                        target_row[col] = np.nan
+                results_df = pd.concat([results_df, pd.DataFrame([target_row])], ignore_index=True)
+
+                os.makedirs(output_dir, exist_ok=True)
+                results_file = os.path.join(output_dir, "color_matching_results.csv")
+                results_df.to_csv(results_file, index=False)
+                logger.info(f"Progress (including target) saved to {results_file}")
         
         # Final analysis
         logger.info("=" * 60)
@@ -364,16 +466,43 @@ def main():
         best_result = min(results_data, key=lambda x: x['output'])
         logger.info(f"Best color match found at well {best_result['well']}")
         logger.info(f"Distance to target: {best_result['output']:.2f}")
-        logger.info(f"RGB: ({best_result['measured_R']}, {best_result['measured_G']}, {best_result['measured_B']})")
-        logger.info(f"Recipe: R={best_result['R_volume_ml']:.3f}mL, Y={best_result['Y_volume_ml']:.3f}mL, B={best_result['B_volume_ml']:.3f}mL, Water={best_result['Water_volume_ml']:.3f}mL")
+        #logger.info(f"RGB: ({best_result['measured_R']}, {best_result['measured_G']}, {best_result['measured_B']})")
+        logger.info(f"{COLOR_SPACE}: {get_color_str({k.replace('measured_',''):v for k,v in best_result.items() if k.startswith('measured_')})}")        
+        logger.info(f"Recipe: R={best_result['R_volume_ml']:.3f}mL, Y={best_result['Y_volume_ml']:.3f}mL, B={best_result['B_volume_ml']:.3f}mL, Water={best_result['Water_volume_ml']:.3f}mL" if not WITHOUT_WATER else f"Recipe: R={best_result['R_volume_ml']:.3f}mL, Y={best_result['Y_volume_ml']:.3f}mL, B={best_result['B_volume_ml']:.3f}mL, Water=0mL")
         
-        # Save results to CSV
-        results_df = pd.DataFrame(results_data)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        results_file = f"color_matching_results_{timestamp}.csv"
-        results_df.to_csv(results_file, index=False)
-        logger.info(f"Results saved to {results_file}")
-        
+        if dispenser.virtual:
+            # Save results to CSV inside the workflow output directory
+            results_df = pd.DataFrame(results_data)
+
+            # Append the target RGB as an extra row at the end of the CSV.
+            # This does not modify any data structures used by the optimizer;
+            # it's only for record-keeping in the saved CSV.
+            try:
+                target_row = {}
+                for col in results_df.columns:
+                    if col == 'well':
+                        target_row[col] = "Target"
+                    elif col.startswith("measured_"):
+                        # Extract the color channel from column name
+                        channel = col.replace("measured_", "")
+                        # Fill with target value if present, else NaN
+                        target_row[col] = target_color.get(channel, np.nan)
+                    else:
+                        # Other columns stay NaN
+                        target_row[col] = np.nan
+
+                # concat the single-row DataFrame to the results
+                results_df = pd.concat([results_df, pd.DataFrame([target_row])], ignore_index=True)
+            except Exception:
+                logger.exception("Failed to append target RGB row; saving without it.")
+
+            # Ensure the output directory exists
+            os.makedirs(output_dir, exist_ok=True)
+            results_file = os.path.join(output_dir, f"color_matching_results.csv")
+            results_df.to_csv(results_file, index=False)
+            logger.info(f"Results saved to {results_file}")
+
+
         # Summary statistics
         distances = [r['output'] for r in results_data]
         logger.info(f"Summary statistics:")
@@ -389,6 +518,7 @@ def main():
         
     finally:
         logger.info("Workflow completed. Moving to origin position.")
+        dispenser.cnc_machine.move_to_point(z=0)
         dispenser.move_to_origin()
 
     if not dispenser.virtual:
