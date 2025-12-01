@@ -220,7 +220,7 @@ def condition_system(dispenser, logger):
     """
     logger.debug("Conditioning system between wash and waste")
     
-    dispenser.dispense_condition(
+    dispenser.condition_needle(
         source_location=RESERVOIR_LOCATION,
         source_index=RESERVOIRS['wash'],
         dest_location=RESERVOIR_LOCATION,
