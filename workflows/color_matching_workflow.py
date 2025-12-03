@@ -40,11 +40,12 @@ import cv2
 # Workflow configuration
 INITIAL_BATCH_SIZE = 5  # First batch of wells to create (5)
 SUBSEQUENT_BATCH_SIZE = 3  # Size of subsequent batches (3)
-MAX_WELLS = 8  # Maximum number of wells on plate (24)
+MAX_WELLS = 24  # Maximum number of wells on plate (24)
 TARGET_WELL = 0  # Index of well containing the target sample
 RANDOM_SEED = 42
 
-VIRTUAL = True
+VIRTUAL = False #saves data by default when NOT virtual
+SAVE_DATA = True #option to save data when virtual
 WITHOUT_WATER = True
 
 # Choose color space for matching: 'RGB', 'RGBA', 'HSV', or 'LAB'
@@ -72,7 +73,9 @@ CONDITION_BEFORE_RINSE = True  #Whether to do a condition step before rinsing (f
 # Get workflow name (file name without extension)
 workflow_name = os.path.splitext(os.path.basename(__file__))[0]
 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-output_dir = os.path.join("output", workflow_name, f"{timestamp}_{COLOR_SPACE}")
+
+virtual_tag = "_virtual" if VIRTUAL else ""
+output_dir = os.path.join("output", workflow_name, f"{timestamp}_{virtual_tag}_{COLOR_SPACE}")
 
 
 def rgb_distance(rgb1, rgb2):
@@ -179,7 +182,7 @@ def create_mixture_at_well(dispenser, well_index, volumes_ml, logger):
             )
 
             if CONDITION_BEFORE_RINSE:
-                vol_pipet = min(volume_ml+0.1, 0.5) #maximum pipet volume 0.5mL
+                vol_pipet = min(volume_ml+0.1, 0.45) #maximum pipet volume 0.45mL
                 if well_index > MAX_WELLS/2:
                     i = 2
                 else:
@@ -191,7 +194,8 @@ def create_mixture_at_well(dispenser, well_index, volumes_ml, logger):
                     dest_index=RESERVOIRS[f'condition_waste_{i}'],
                     vol_pipet = vol_pipet,
                     speed = SPEED,
-                    num_conditions = 1)
+                    num_conditions = 1
+                )
 
             dispenser.rinse_needle(
                 wash_location="reservoir_12", 
@@ -221,9 +225,11 @@ def condition_system(dispenser, logger):
 
 def main():
     """Main color matching workflow."""
-    
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_filename = f"color_matching_workflow{virtual_tag}_{timestamp}.log"
+
     # Initialize logging
-    logger = start_workflow_logging("color_matching_workflow")
+    logger = start_workflow_logging("color_matching_workflow", log_filename=log_filename, virtual=VIRTUAL)
     logger.info("=" * 60)
     logger.info("Starting Color Matching Bayesian Optimization Workflow")
     logger.info("=" * 60)
@@ -236,7 +242,8 @@ def main():
         virtual=VIRTUAL,  # Set to False for real hardware
         camera_index=0, #for non-gaming computer
         log_level=logging.INFO,
-        output_dir=output_dir
+        output_dir=output_dir,
+        log_filename = log_filename,
     )
     dispenser.cnc_machine.Z_LOW_BOUND = -70  # Adjust as needed
     dispenser.cnc_machine.home() #Home machine
@@ -333,7 +340,7 @@ def main():
             
             logger.info(f"Well {well_idx}: {COLOR_SPACE}={get_color_str(well_color)}, Distance={distance:.1f}") #Outputting the RGB values for logging
             
-            if not dispenser.virtual:
+            if (not dispenser.virtual) or SAVE_DATA:
                 results_df = pd.DataFrame(results_data)
 
                 # Append target color as a reference row
@@ -437,7 +444,7 @@ def main():
             batch_number += 1
 
             # Save partial CSV after each batch (overwrite same file)
-            if dispenser.virtual:
+            if (not dispenser.virtual) or SAVE_DATA:
                 results_df = pd.DataFrame(results_data)
 
                 # Append target color as a reference row
@@ -470,7 +477,7 @@ def main():
         logger.info(f"{COLOR_SPACE}: {get_color_str({k.replace('measured_',''):v for k,v in best_result.items() if k.startswith('measured_')})}")        
         logger.info(f"Recipe: R={best_result['R_volume_ml']:.3f}mL, Y={best_result['Y_volume_ml']:.3f}mL, B={best_result['B_volume_ml']:.3f}mL, Water={best_result['Water_volume_ml']:.3f}mL" if not WITHOUT_WATER else f"Recipe: R={best_result['R_volume_ml']:.3f}mL, Y={best_result['Y_volume_ml']:.3f}mL, B={best_result['B_volume_ml']:.3f}mL, Water=0mL")
         
-        if dispenser.virtual:
+        if (not dispenser.virtual) or SAVE_DATA:
             # Save results to CSV inside the workflow output directory
             results_df = pd.DataFrame(results_data)
 

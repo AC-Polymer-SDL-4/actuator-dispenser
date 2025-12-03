@@ -34,14 +34,14 @@ class ActuatorRemote:
       RET <seconds> [speed0-65535]
       STOP
     """
-    def __init__(self, port="COM3", virtual=False, log_level=logging.INFO, baud=115200, timeout=2.0):
+    def __init__(self, port="COM3", virtual=False, log_level=logging.INFO, baud=115200, timeout=2.0, log_filename=None):
         self.port = port
         self.virtual = virtual
         self.baud = baud
         self.timeout = timeout
 
         # logger (uses yours if available, else the no-op fallback)
-        self.logger = setup_logger("actuator_controller", virtual=virtual, log_level=log_level)
+        self.logger = setup_logger("actuator_controller", virtual=virtual, log_level=log_level, log_filename=log_filename)
         log_method_entry(self.logger, "__init__", port=port, virtual=virtual)
 
         if self.virtual:
@@ -118,7 +118,7 @@ class ActuatorRemote:
             except Exception:
                 r = ""
             if r:
-                self.logger.debug(f"Arduino: {r}")
+                self.logger.info(f"{line!r}, Arduino: {r}")
                 last = r
                 if "OK:STOPPED" in r:
                     return r  # finished the timed move

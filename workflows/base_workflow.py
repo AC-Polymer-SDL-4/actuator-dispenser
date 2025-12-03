@@ -18,7 +18,7 @@ from log_config import initialize_workflow_logging
 # You can now use these in your workflow files:
 # ActuatorRemote, CNC_Machine, Liquid_Dispenser, initialize_workflow_logging
 
-def start_workflow_logging(workflow_name, virtual=False):
+def start_workflow_logging(workflow_name, log_filename=None, virtual=False):
     """
     Convenience function to start workflow logging.
     Call this at the beginning of your workflow with the workflow filename.
@@ -30,4 +30,4 @@ def start_workflow_logging(workflow_name, virtual=False):
     Returns:
         logging.Logger: Workflow logger
     """
-    return initialize_workflow_logging(workflow_name, virtual=virtual)
+    return initialize_workflow_logging(workflow_name, log_filename=log_filename, virtual=virtual)

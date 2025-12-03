@@ -34,8 +34,8 @@ well_plate: #Array-location
 well_plate_camera: #Array-location
   num_x: 4 #Rows
   num_y: 6 #Columns
-  x_origin: 168.000 #move the cnc machine with the needle attached, and find the position 
-  y_origin: 137.000
+  x_origin: 172.000 #move the cnc machine with the needle attached, and find the position , 168 before
+  y_origin: 141.000 #137 before
   z_origin: -10
   x_offset: 20 #Measure with caliper
   y_offset: -18.9 #MEasure with caliper

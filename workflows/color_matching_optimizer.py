@@ -10,6 +10,8 @@ from baybe.constraints import DiscreteSumConstraint, ThresholdCondition
 from baybe.utils.random import set_random_seed
 from baybe.recommenders import RandomRecommender
 
+#IF RUNNING WITHOUT WATER: changed parameters & constraints accordingly
+
 def initialize_campaign(upper_bound, random_seed, random_recs=False):
     set_random_seed(random_seed) 
 
@@ -24,7 +26,7 @@ def initialize_campaign(upper_bound, random_seed, random_recs=False):
     parameters = [
         # NumericalDiscreteParameter(
         #     name = 'Water',
-        #     values = np.array(range(0, 1000, 50))
+        #     values = np.array(range(0, 1000, 50)),
         #     #encoding = 'INT'
         #     ),
         NumericalDiscreteParameter(

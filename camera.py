@@ -20,7 +20,7 @@ class Camera:
       - Compatible with CNC_Machine logging system
     """
     
-    def __init__(self, camera_index=0, output_dir="captured_images", virtual=False, log_level=logging.INFO):
+    def __init__(self, camera_index=0, output_dir="captured_images", virtual=False, log_level=logging.INFO, log_filename=None):
         """
         Initialize the camera controller.
         
@@ -36,7 +36,7 @@ class Camera:
         self.cap = None
         
         # Setup centralized logging with virtual mode tagging
-        self.logger = setup_logger("camera", virtual=virtual, log_level=log_level)
+        self.logger = setup_logger("camera", virtual=virtual, log_level=log_level, log_filename=log_filename)
 
         self.logger.info(
             "Camera initialized: index=%d, output_dir=%s, virtual=%s", 
@@ -150,13 +150,15 @@ x
 
             # Decide which colour spaces to compute
             if color_space is None:
-                requested = None
                 self.logger.warning("color_space is None in virtual mode; defaulting to RGB")
                 requested = ["RGB"]
             elif isinstance(color_space, (list, tuple)):
                 requested = [s.upper() for s in color_space]
-            else:
+            elif isinstance(color_space, str) and color_space in ("RGB", "RGBA", "HSV", "LAB"):
                 requested = [str(color_space).upper()]
+            else:
+                self.logger.warning("Unrecognized color_space '%s' in virtual mode; defaulting to RGB", color_space)
+                requested = ["RGB"]
 
             results = {}
 
@@ -222,11 +224,16 @@ x
 
             # Decide which colour spaces to compute. Accepts None (use color_mode), a string, or a list/tuple
             if color_space is None:
-                requested = [str(color_space).upper()]
+                self.logger.warning("color_space is None in virtual mode; defaulting to RGB")
+                requested = ["RGB"]    
             elif isinstance(color_space, (list, tuple)):
-                requested = [s.upper() for s in color_space]
-            else:
+                requested = [s.upper() for s in color_space and s.upper() in ("RGB", "RGBA", "HSV", "LAB")]
+            elif isinstance(color_space, str) and color_space in ("RGB", "RGBA", "HSV", "LAB"):
                 requested = [str(color_space).upper()]
+            else:
+                self.logger.warning("Unrecognized color_space '%s'; defaulting to RGB", color_space)
+                requested = ["RGB"]
+
 
             # Prepare a result mapping
             results = {}
