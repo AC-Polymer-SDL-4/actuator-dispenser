@@ -14,10 +14,10 @@ class CNC_Machine:
 
     def __init__(self, com, baud_rate=115200, x_low_bound=0, x_high_bound=270, 
                  y_low_bound=0, y_high_bound=150, z_low_bound=-35, z_high_bound=0,
-                 virtual=False, locations_file='location_status.yaml', log_level=logging.INFO,):
+                 virtual=False, locations_file='location_status.yaml', log_level=logging.INFO, log_filename=None):
         
         # Setup centralized logging with virtual mode tagging
-        self.logger = setup_logger("cnc_machine", virtual=virtual, log_level=log_level)
+        self.logger = setup_logger("cnc_machine", virtual=virtual, log_level=log_level, log_filename=log_filename)
         
         log_method_entry(self.logger, "__init__", 
                         com=com, baud_rate=baud_rate, virtual=virtual,

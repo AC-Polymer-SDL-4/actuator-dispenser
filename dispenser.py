@@ -6,6 +6,7 @@ from camera import Camera
 from log_config import setup_logger, log_method_entry, log_method_exit, log_virtual_action
 import time
 import os
+from datetime import datetime
 
 class Liquid_Dispenser:
     """
@@ -24,7 +25,7 @@ class Liquid_Dispenser:
     """
     
     def __init__(self, cnc_comport, actuator_comport, camera_index=0, output_dir="well_plate_photos", 
-                 virtual=False, log_level=logging.INFO):
+                 virtual=False, log_level=logging.INFO, log_filename=None):
         """
         Initialize the complete liquid dispensing system.
         
@@ -37,9 +38,19 @@ class Liquid_Dispenser:
             log_level: Logging level for this class (DEBUG, INFO, WARNING, ERROR)
         """
         self.virtual = virtual
-        
+
         # Setup centralized logging with virtual mode tagging
-        self.logger = setup_logger("dispenser", virtual=virtual, log_level=log_level)
+        logs_dir = os.path.join(os.path.dirname(__file__), "logs")
+        os.makedirs(logs_dir, exist_ok=True)
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        workflow_name = "general"
+        virtual_tag = "_virtual" if virtual else ""
+        log_filename = log_filename if log_filename is not None else f"{workflow_name}{virtual_tag}_{timestamp}.log"
+
+        
+        self.logger = setup_logger("dispenser", virtual=virtual, log_level=log_level, log_filename=log_filename)
+        
         
         log_method_entry(self.logger, "__init__", 
                         cnc_comport=cnc_comport, 
@@ -56,14 +67,14 @@ class Liquid_Dispenser:
         
         try:
             # Initialize CNC machine with virtual mode and logging
-            self.cnc_machine = CNC_Machine(com=cnc_comport, virtual=virtual, log_level=log_level)
+            self.cnc_machine = CNC_Machine(com=cnc_comport, virtual=virtual, log_level=log_level, log_filename=log_filename)
             
             # Initialize actuator with virtual mode and logging
-            self.actuator = ActuatorRemote(port=actuator_comport, virtual=virtual, log_level=log_level)
+            self.actuator = ActuatorRemote(port=actuator_comport, virtual=virtual, log_level=log_level, log_filename=log_filename)
             
             # Initialize camera with virtual mode and logging  
             self.camera = Camera(camera_index=camera_index, output_dir=output_dir, 
-                               virtual=virtual, log_level=log_level)
+                               virtual=virtual, log_level=log_level, log_filename=log_filename)
             
             self.logger.info("All components initialized successfully")
             log_method_exit(self.logger, "__init__", "Success")
@@ -74,7 +85,7 @@ class Liquid_Dispenser:
             raise
 
     def dispense_between(self, source_location, source_index, dest_location, dest_index, 
-                        transfer_vol, blowout_vol = 0.28, buffer_time=0.35, speed=32768, mixing_vol = 0, num_mixes=3, mixing_speed = 32768):
+                        transfer_vol, blowout_vol = 0.28, buffer_time=0.25, speed=32768, mixing_vol = 0, num_mixes=3, mixing_speed = 32768):
         """
         Transfer liquid from a source location to a destination location,
         with optional mixing. Also supports mixing-only without transfer by setting transfer_vol = 0.
@@ -101,17 +112,14 @@ class Liquid_Dispenser:
             num_mixes (int): Number of mixing cycles to perform
         """
         # Volume calculation constants
-        SYRINGE_MAX_VOL = 0.78  
-        transfer_max_vol = SYRINGE_MAX_VOL-blowout_vol  # Maximum volume per dispense in mL (hardware limitation)
-        speed_time_ratio = 32768/speed  # Speed scaling factor (1.0 at 32768)
-        if int(speed_time_ratio) == 2: 
-            speed_time_ratio = 0.69
-        elif int(speed_time_ratio) == 3:
-            speed_time_ratio = 0.42
+        MAX_TIME = 1.95 #The maximum time for a single dispense in seconds (for liquid transfer AND blowout time!) -- edit based on calibration
+        SLOPE = 0.3949  # Time per mL conversion factor (seconds/mL, from calibration), before: 0.4295, 0.4679, 0.4052, 0.3865 (new metal syringe)
 
-        SLOPE = 0.369  # Time per mL conversion factor (seconds/mL, from calibration), before: 0.4295, 0.4679, 0.4052
+        SYRINGE_MAX_VOL = MAX_TIME*SLOPE #0.76  
+        transfer_max_vol = SYRINGE_MAX_VOL-blowout_vol  # Maximum volume per dispense in mL (hardware limitation)
+        
         min_vol = 0.025
-        air_time = blowout_vol/(SLOPE*speed_time_ratio) #air_time for blow out
+        air_time = blowout_vol/SLOPE #air_time for blow out
         MIN_BUFFER_TIME = 0 #0.6 #seconds
         
 
@@ -138,7 +146,7 @@ class Liquid_Dispenser:
         # Calculate how many dispense cycles we need
             num_dispenses = math.ceil(transfer_vol / transfer_max_vol)
             dispense_vol = transfer_vol / num_dispenses  # Volume per individual dispense
-            retract_time = dispense_vol/(SLOPE*speed_time_ratio) # Time needed to aspirate this volume
+            retract_time = dispense_vol/SLOPE # Time needed to aspirate this volume
             
             
             if transfer_vol > (transfer_max_vol * 10):  # Reasonable upper limit
@@ -193,7 +201,7 @@ class Liquid_Dispenser:
                     self.actuator.extend(total_dispense_time, speed=speed)
 
             if mixing_vol > 0 and num_mixes > 0 and mixing_vol <= transfer_max_vol: #mixing
-                retract_time_mixing = mixing_vol / (SLOPE * speed_time_ratio)  # Time needed to aspirate this volume (no air gap though)
+                retract_time_mixing = mixing_vol / SLOPE  # Time needed to aspirate this volume (no air gap though)
                 total_dispense_time = air_time + retract_time_mixing + buffer_time
 
                  # Move to source and aspirate
@@ -246,7 +254,7 @@ class Liquid_Dispenser:
                 self.logger.error("Failed to stop actuator after error")
             raise
 
-    def condition_needle(self, source_location, source_index, dest_location, dest_index, num_conditions = 1, vol_pipet=0.5, buffer_time=0.35, speed=32768):
+    def condition_needle(self, source_location, source_index, dest_location, dest_index, num_conditions = 1, vol_pipet=0.45, buffer_time=0.25, speed=32768):
         """
         Condition the syringe by aspirating from the source location and dispensing into waste
         Args:
@@ -255,12 +263,12 @@ class Liquid_Dispenser:
         for i in range(num_conditions):
             self.dispense_between(source_location = source_location, source_index=source_index, dest_location=dest_location, dest_index=dest_index, transfer_vol=vol_pipet, buffer_time=buffer_time, speed=speed, blowout_vol=0.28)
 
-    def rinse_needle(self, wash_location, wash_index,vol_pipet=0.5, buffer_time=0.35, speed=32768, num_mixes = 3):
+    def rinse_needle(self, wash_location, wash_index,vol_pipet=0.45, buffer_time=0.25, speed=32768, num_mixes = 3):
         """
         Rinsing the syringe in the wash station. Note that it is expected to aspirate and dispense from the same well.
         num_mixes: the number of times to mix inside of well
         """
-        self.dispense_between(source_location=wash_location, source_index=wash_index, transfer_vol=0, dest_location=wash_location, dest_index=wash_index, mixing_vol=vol_pipet, buffer_time=buffer_time, speed=speed,num_mixes=num_mixes)
+        self.dispense_between(source_location=wash_location, source_index=wash_index, transfer_vol=0, dest_location=wash_location, dest_index=wash_index, mixing_vol=vol_pipet, buffer_time=buffer_time, mixing_speed=speed,num_mixes=num_mixes)
 
 
     # def dispense_condition(self, source_location, source_index, dest_location="vial_rack", 

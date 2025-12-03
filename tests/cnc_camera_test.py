@@ -18,7 +18,7 @@ dispenser = Liquid_Dispenser(cnc_comport="COM4",
                              output_dir=output_dir)
 dispenser.cnc_machine.Z_LOW_BOUND = -70 #Just in this case
 
-#dispenser.cnc_machine.home()
+dispenser.cnc_machine.home()
 
 #df = pd.DataFrame()
 
@@ -44,7 +44,7 @@ dispenser.cnc_machine.Z_LOW_BOUND = -70 #Just in this case
 #     print(f"Data saved to {output_csv}")
 
 
-for i in range(6):
+for i in range(24):
     color = dispenser.get_image_color("well_plate_camera",i, f"_{i}", square_size=60, show_crop=True)
     print(f"Color measurement well {i}: {color}")
 

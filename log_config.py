@@ -23,7 +23,7 @@ def set_workflow_name(workflow_name):
     global current_workflow
     current_workflow = workflow_name
 
-def setup_logger(module_name, virtual=False, log_level=logging.INFO):
+def setup_logger(module_name, virtual=False, log_level=logging.INFO, log_filename=None):
     """
     Set up a logger with both file and console handlers.
     All modules will log to the same workflow-specific file.
@@ -89,8 +89,11 @@ def setup_logger(module_name, virtual=False, log_level=logging.INFO):
     
     # Use workflow name if available, otherwise fall back to module name
     workflow_name = current_workflow if current_workflow else "general"
-    log_filename = f"{workflow_name}{virtual_tag}_{timestamp}.log"
-    log_filepath = os.path.join(logs_dir, log_filename)
+    if log_filename is None:
+        log_filename = f"{workflow_name}{virtual_tag}_{timestamp}.log"
+        log_filepath = os.path.join(logs_dir, log_filename)
+    else:
+        log_filepath = os.path.join(logs_dir, log_filename)
     
     # Use RotatingFileHandler to manage log file size (max 1MB, keep 3 backups)
     file_handler = RotatingFileHandler(
@@ -152,7 +155,7 @@ def log_virtual_action(logger, action_description):
     """
     logger.info(f"[VIRTUAL] {action_description}")
 
-def initialize_workflow_logging(workflow_name, virtual=False):
+def initialize_workflow_logging(workflow_name, log_filename=None,virtual=False):
     """
     Initialize logging for a workflow. This should be called at the beginning of each workflow.
     
@@ -166,6 +169,6 @@ def initialize_workflow_logging(workflow_name, virtual=False):
     set_workflow_name(workflow_name)
     
     # Create a main workflow logger
-    workflow_logger = setup_logger("workflow_init", virtual=virtual)
+    workflow_logger = setup_logger("workflow_init", virtual=virtual, log_filename=log_filename if log_filename is not None else f"{workflow_name}{'_virtual' if virtual else ''}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
     
     return workflow_logger
