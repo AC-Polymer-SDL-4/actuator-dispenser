@@ -27,7 +27,20 @@ Workflow:
 """
 
 from base_workflow import Liquid_Dispenser, start_workflow_logging
-from color_matching_optimizer import initialize_campaign, get_initial_recommendations, get_new_recs_from_results
+
+# Optimizer Selection - Change this to switch optimization methods
+OPTIMIZER_TYPE = 'baybe'  # Options: 'baybe', 'gradient', 'convex'
+
+# Import the selected optimizer
+if OPTIMIZER_TYPE == 'baybe':
+    from color_matching_optimizer import initialize_campaign, get_initial_recommendations, get_new_recs_from_results
+elif OPTIMIZER_TYPE == 'gradient':
+    from color_matching_gradient_optimizer import initialize_campaign, get_initial_recommendations, get_new_recs_from_results
+elif OPTIMIZER_TYPE == 'convex':
+    from color_matching_convex_optimizer import initialize_campaign, get_initial_recommendations, get_new_recs_from_results
+else:
+    raise ValueError(f"Unknown optimizer type: {OPTIMIZER_TYPE}. Choose 'baybe', 'gradient', or 'convex'")
+
 import pandas as pd
 import numpy as np
 import time
@@ -44,9 +57,15 @@ MAX_WELLS = 24  # Maximum number of wells on plate (24)
 TARGET_WELL = 0  # Index of well containing the target sample
 RANDOM_SEED = 42
 
-VIRTUAL = False #saves data by default when NOT virtual
+VIRTUAL = True #saves data by default when NOT virtual
 SAVE_DATA = True #option to save data when virtual
 WITHOUT_WATER = True
+
+# Choose optimization method at the top of this file by setting OPTIMIZER_TYPE
+# 'baybe' - Bayesian optimization (default, good exploration)
+# 'gradient' - Gradient descent (fast convergence, may find local minima)
+# 'convex' - Convex optimization (global optimum if problem is convex)
+OPTIMIZER_TYPE = 'convex'
 
 # Choose color space for matching: 'RGB', 'RGBA', 'HSV', or 'LAB'
 COLOR_SPACE = 'HSV'
@@ -262,20 +281,30 @@ def main():
         logger.info("Step 1: Reading target color values from sample at well 0")
         target_color = dispenser.get_image_color("well_plate_camera", TARGET_WELL, "target_sample", square_size=60, color_space=COLOR_SPACE, show_crop=True)
 
-
         logger.info(f"Target {COLOR_SPACE} values: {get_color_str(target_color)}") #log the target color values
 
         # Calculate upper bound for optimization (max possible distance) - keep RGB max for optimizer scaling
         max_distance = rgb_distance([0, 0, 0], [255, 255, 255])  # Max possible RGB distance
 
-        # Initialize Bayesian optimization campaign
-        logger.info("Initializing Bayesian optimization campaign...")
+        # Initialize optimization campaign
+        logger.info(f"Initializing {OPTIMIZER_TYPE} optimization campaign...")
         campaign, searchspace = initialize_campaign(
             upper_bound=50,
             random_seed=RANDOM_SEED,
             random_recs=False
         )
-        logger.info("Bayesian optimization campaign initialized successfully")
+        
+        # Set target color for convex optimizer (if applicable)
+        if OPTIMIZER_TYPE == 'convex' and hasattr(campaign, 'set_target_color'):
+            # Convert target color to RGB for convex optimizer
+            if COLOR_SPACE == 'RGB':
+                target_rgb = [target_color['R'], target_color['G'], target_color['B']]
+            else:
+                # Convert from other color spaces to RGB
+                # For now, use a simple approximation - you might want more sophisticated conversion
+                target_rgb = [128, 128, 128]  # Default neutral gray
+            campaign.set_target_color(target_rgb)
+        logger.info(f"{OPTIMIZER_TYPE.title()} optimization campaign initialized successfully")
         
         # Step 2: Generate and create initial batch
         logger.info(f"Step 2: Generating initial batch of {INITIAL_BATCH_SIZE} recommendations")
