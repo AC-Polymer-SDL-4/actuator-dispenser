@@ -19,7 +19,7 @@ def initialize_campaign(upper_bound, random_seed, random_recs=False):
         bounds=(0, upper_bound),
     )
 
-    objective = SingleTargetObjective(target=target)
+    objective = SingleTargetObjective(target=target)#
 
     # Components that can be varied (excluding fixed metal salt)
     # Total volume constraint: HCl + citric_acid + ascorbic_acid + PVA1 + PVA2 + PVA3 + NaOH + Water = 800 uL
