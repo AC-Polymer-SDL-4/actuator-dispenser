@@ -10,7 +10,7 @@ _Total assembly time: ~4 hours_
 6.	Assemble the tool head (_50 mins_)
 7.	Mount the backlight and deck ware holder (_optional, 5 mins_)
    
-Please also read through the [**important notes**](#important-notes-things-to-watch-out-for-when-starting-workflows).
+Please also read through the [**important notes**](#%EF%B8%8Fimportant-notes-things-to-watch-out-for-when-starting-workflows).
 
 ---
 ## Step 1: Order Required Parts
