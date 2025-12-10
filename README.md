@@ -10,8 +10,8 @@ This repository contains an assembly guide, code, 3D-design files and data colle
 - Short assembly Time (4 hours)
 
 ### Folders included in this repo: 
-1. `3D_models`: contains .f3d and .stl files for the 3D-printed labware holder, tool head and electronics casing
-2. `code`: contains the python files for the workflows, tests and code used to control the system and a user guide
+1. `3D_models`: contains .f3d and .stl files for the 3D-printed labware holder, tool head and electronics casing, along with an assembly guide
+2. `code`: contains the python files for the workflows, tests and code used to control the system and a user guide for code usage
 3. `data`: contains the experimental data collected from color matching workflows (and PVA complexation workflows), referenced in the paper
 
 ### Authors:
@@ -55,14 +55,14 @@ All materials required to build this dispenser are listed below.
 ### Summary of steps for assembling this tool
 _Total assembly time: approximately 4 hours_
 
-1. Order the required parts in the BoM.
-2. 3D-print the associated files in `3D_models` including the deckware holder, mount for attaching the backlight and tool head
-3. Assemble the CNC machine using the manufacturer's instructions (_2 hours_)
-4. Connect actuator to microcontroller and power supply (_20 mins_)
-5. Mount the backlight and deck ware holder (_5 mins_)
-6. Assemble the tool head (_50 mins_)
-7. Integrate device with computer (_30+ minutes (depending on device operating system)_)
+1.	Order the required parts in the BoM.
+2.	3D-print the files in the `3D_models` folder including the tool head and optionally the deckware holder, backlight clamps and electronics casing
+3.	Assemble the CNC machine following the manufacturer's instructions (_2 hours_)
+4.	Connect the actuator to the microcontroller and power supply (_20 mins_)
+5.	Connect the device to your computer and code setup (_25 minutes, depending on your operating system_)
+6.	Assemble the tool head (_50 mins_)
+7.	Mount the backlight and deck ware holder (_optional, 5 mins_)
 
 ## Known issues
-1. Gradual decrease in volume dispensed over time: It is recommended to **re-calibrate** the dispenser every 3 full 24-wellplates of experiments (~1200 liquid transfers) and switch to a new syringe every 6 well plates of experiments (~2000 liquid transfers).
+1. Gradual decrease in volume dispensed over time: It is recommended to **re-calibrate** the dispenser every 3 full 24-wellplates of experiments (~1200 liquid transfers) and **replace the syringe** every 6 well plates of experiments (~2000 liquid transfers).
 2. The glass syringe may break over time due to repeated stress from the extension of the metal plunger: It is highly recommended to 3D-print the **TPU padding** (see the `3D_models` folder) and glue it to the bottom of the syringe.
