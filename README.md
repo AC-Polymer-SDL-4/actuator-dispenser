@@ -1,5 +1,6 @@
 # Ultra-budget liquid dispenser
-[ADD IMAGE]
+<img width="400" alt="1" src="https://github.com/user-attachments/assets/2fc9e68c-ccea-4a6e-b496-4e38a5ad04b1" />
+
 ## Overview
 This repository contains an assembly guide, code, 3D-design files and data collected from using our ultra-budget liquid dispenser. With a small footprint, low cost (~$500 USD), short assembly time (4 hrs), full python integration and visual characterization, this system provides an accessible tool for developing self-driving (automated and AI-guided) workflows.
 
