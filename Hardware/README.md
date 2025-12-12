@@ -26,7 +26,8 @@ All materials required to build this dispenser are listed below:
 |1 mL Glass Syringe|Bitomic|[1ML Borosilicate Glass Syringe with Silver Metal Plunger](https://www.amazon.com/Bitomic-Borosilicate-Anti-Leak-Accurate-Measuring/dp/B0B12N5FX1/ref=sr_1_4?crid=27Z7T6R5TKLKY&dib=eyJ2IjoiMSJ9.Yw4kuoOLBHtQtgRgCWrg_UyrphPhIigHygfRI9gIOsOOxc5vZB-vT6Ud9MmBn5jASPJFDirAoTOCDC5BUK4XhJrzwQ0H2fK1CxhK8O50jTiz1UXBEKUiPXQHhhY0z7NGUJ_H0zS58w3F-HV7qmqQ1KvSXZVnOcc-H95d0KyJQKOkdQ1ql96qCZtY4TWm8Ug5pwZGvPdHG9RO7FutGuSDnvlcll1teu8786hucaDxSbc.PAqqr5PJKCy80cdOngdv4AXuUCcV1T5XpCM-I6ynCME&dib_tag=se&keywords=1ml%2Bsyringe%2Bwith%2Bmetal%2Bplunger&qid=1761926550&sprefix=1ml%2Bsyringe%2Bwith%2Bmetal%2Bplunge%2Cspecialty-aps%2C86&sr=8-4-catcorr&srs=58792496011&th=1)|1|23.04|Comes in pack of 10 syringes|
 |Microcontroller|Arduino|[UNO R3](https://www.robotshop.com/products/arduino-uno-r3-usb-microcontroller)|1|30.08|Communication between computer and actuator|
 |Motor Board|Arduino|[A000079](https://www.digikey.ca/en/products/detail/arduino/A000079/2784007)|1|28.4|Powers actuator|
-|12V Barrel Power Supply|Digikey||1||Microcontroller power supply
+|12V Barrel Power Supply + Barrel Connector|ALITOVE|[12V DC Power Supply 2A](https://www.amazon.com/gp/aw/d/B07VQHCK6P/?th=1)|1|7.99|Microcontroller power supply|
+|USB-C to USB-A Cable|DIYables|[DIY-USB-CABLE-UNO-R4](https://www.amazon.com/DIYables-Type-C-Cable-Arduino-Pieces/dp/B0CF575PW9/ref=sr_1_1?crid=1X5JRSBU5KXI3&dib=eyJ2IjoiMSJ9.xfdV7_O83Egk5hCZtzdxFgvndZUEhJk2wiER55T8da2XrHO9LYmdahZkSdnYATubZMWKmsgqLrut1veHztMaO_1m7VoN_dx0ihnui67jTtyK3FgLw7Rz-Eh6wyMHjEgAXv9i7K60oH5XuqyL5G4an2eJMNlM_DeC17x3jCVAVnJnZ6uyetzHWv7cU3cMDAj1BpTPr50KwHaxN_6sWH7-4z1DrrqwTndSrpDfoMHmvNGEaNXyxMRSGvqrmhN91ottXIMU9-Rr-A8sSM3ULrgUv6hOPjk3B-u5Lc4FVsLsT54.fcm_5GPGOIdKn36kKO_IwGwRgbkg4UXyGuoXdwWb4EE&dib_tag=se&keywords=USB%2BType-C%2BCable%2Bfor%2BArduino%2BUno%2BR4&qid=1765574974&s=electronics&sprefix=usb%2Btype-c%2Bcable%2Bfor%2Barduino%2Buno%2Br4%2Celectronics%2C101&sr=1-1&th=1)|1|7.99|For connection to microcontroller, comes in pack of 2|
 |3D-printed tool head and deck ware|n/a|n/a|1|5|Printed in PLA and PETG|
 |3D-printed electronics box|n/a|n/a|1|2.18|optional|
 |Total Cost||||**approximately 500**||
@@ -37,7 +38,7 @@ All materials required to build this dispenser are listed below:
 |22 AWG Wires|Adafruit|[1311](https://www.adafruit.com/product/1311)|40 cm|15.95||
 |M3 **x 16mm** Screw|Adafruit|[1311](https://www.adafruit.com/product/1311)|1|15.95|Locking mechanism between syringe plunger and actuator|
 |M3 Nut|Adafruit|[1311](https://www.adafruit.com/product/1311)|1|15.95|Locking mechanism between syringe plunger and actuator|
-|M6 **x 10mm** Screw|Adafruit|[1311](https://www.adafruit.com/product/1311)|4|15.95|Holds deckware on CNC deck|
+|M6 **x 20mm** Screw|Adafruit|[1311](https://www.adafruit.com/product/1311)|4|15.95|Holds deckware on CNC deck|
 
 - Pliers
 - Allen keys
@@ -73,7 +74,8 @@ _Parts and materials required:_
 1. If using the optional electronics box, place the UNO R3 microcontroller at the bottom of the box, with the USB port aligned with the rectangular slot at the side of the box
 2. Mount the motor shield above the microcontroller and ensure they are attached securely
 3. To connect the power supply, insert a red wire into the positive (+) terminal and a black wire into the negative (-) terminal of the barrel connector. Tighten the screws and gently tug to confirm the wires are secured. Then, connect the red wire to the VIN pin and the black wire to the GND pins on the motor shield. <br>
-**[INSERT WIRING DIAGRAM]**
+<img width="450" alt="19" src="https://github.com/user-attachments/assets/ce17f643-c322-48c5-9257-334810c5d040" />
+
    
 4. Wire the actuator: connect the red (positive) wire to the A+ pin and the black (negative) wire to A- on the motor shield. Use wire connectors or solder extensions if needed to provide enough slack for movement of the actuator in the CNC gantry.
 5. Plug the 12V power supply into the barrel connector.
@@ -126,7 +128,9 @@ The following is how it should look when this step is complete: <br>
 
 8.	Extend the plunger using `act_ext.py` until the plunger is at the very bottom of the syringe. It is recommended to use intervals of 0.3 second extensions.
 9.	Twist off the syringe cap and attach a new syringe needle by twisting it on.
-10.	Thread the metal rod through the holes at the top of the holder and the actuator
+<img width="150" alt="18" src="https://github.com/user-attachments/assets/f215024a-4181-449b-8d88-3eed3cb20f3f" />
+
+11.	Thread the metal rod through the holes at the top of the holder and the actuator
 
 ## Step 7: Deck set-up and mount labware 
 1.	Place the backlight on the CNC deck.
@@ -142,6 +146,7 @@ _🎉Congratulations you have finished setting up the hardware for the ultra-bud
 2. Ensure the camera is securely placed in the front of the tool head
    - Test its positionings using `cnc_camera_test.py` to make sure you don’t pick up the edges of the wells
    - Edit location_status.yaml, decrease the crop size or adjust the camera if needed
+   - <img width="150" alt="20" src="https://github.com/user-attachments/assets/e6a4ed9a-346e-4942-91be-e60b2ccbfe04" />
      
 3.	Ensure the actuator is fully extended & plunger is at the bottom of the syringe. Since the position of the syringe is not tracked, pulling it too far up can break the dispenser.
      - If not, use `code\test\act_ext.py` to move the plunger
