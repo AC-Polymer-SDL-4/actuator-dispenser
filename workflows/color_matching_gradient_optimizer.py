@@ -35,20 +35,21 @@ class GradientDescentCampaign:
                 rec = self._generate_random_valid_combination()
                 recommendations.append(rec)
         else:
-            # Use gradient descent from current best + some exploration
-            logger.info("Using gradient descent for recommendations")
+            # Use gradient-based exploration from multiple starting points
+            logger.info("Using gradient-based exploration for recommendations")
             
             for i in range(batch_size):
                 if i == 0 and self.current_best is not None:
-                    # First recommendation: optimize from current best
-                    rec = self._optimize_from_point(self.current_best)
+                    # First recommendation: gradient step from current best
+                    rec = self._gradient_step_from_best()
                 else:
-                    # Additional recommendations: optimize from perturbed points
-                    if self.current_best is not None:
-                        start_point = self._perturb_point(self.current_best)
+                    # Additional recommendations: explore different regions
+                    if len(self.results_data) >= 3:
+                        # Use gradient from different good points
+                        rec = self._explore_gradient_direction()
                     else:
-                        start_point = self._generate_random_valid_combination()
-                    rec = self._optimize_from_point(start_point)
+                        # Still exploring randomly with some bias toward good regions
+                        rec = self._biased_random_exploration()
                 
                 recommendations.append(rec)
         
@@ -138,74 +139,148 @@ class GradientDescentCampaign:
         
         return perturbed.tolist()
     
-    def _optimize_from_point(self, start_point):
-        """Run gradient descent optimization from a starting point"""
+    def _gradient_step_from_best(self):
+        """Take a gradient step from the current best solution"""
+        if self.current_best is None:
+            return self._generate_random_valid_combination()
         
-        # Define objective function (we'll use a surrogate since we don't have the true function)
-        def surrogate_objective(x):
-            # Use Gaussian Process-like interpolation from existing data
-            if len(self.results_data) == 0:
-                return 0.0  # No data yet
+        # Compute approximate gradient from nearby points
+        gradient = self._compute_local_gradient(self.current_best)
+        
+        # Take a step in the negative gradient direction (minimize)
+        step_size = 150  # Adjust as needed
+        current = np.array(self.current_best)
+        new_point = current - step_size * gradient
+        
+        # Project back to feasible space
+        new_point = self._project_to_feasible(new_point)
+        
+        logger.info(f"Gradient step from {self.current_best} to {new_point.tolist()}")
+        return new_point.tolist()
+    
+    def _explore_gradient_direction(self):
+        """Explore in gradient directions from different good points"""
+        # Find second and third best points
+        sorted_results = sorted(self.results_data, key=lambda x: x['output'])
+        
+        if len(sorted_results) >= 2:
+            # Use second or third best as starting point
+            start_idx = min(1 + np.random.randint(0, min(2, len(sorted_results)-1)), len(sorted_results)-1)
+            start_result = sorted_results[start_idx]
+            start_point = [start_result['R'], start_result['Y'], start_result['B']]
             
-            distances = []
-            values = []
-            for result in self.results_data:
-                point = np.array([result['R'], result['Y'], result['B']])
-                dist = np.linalg.norm(x - point)
-                distances.append(dist)
-                values.append(result['output'])
+            # Compute gradient and take step
+            gradient = self._compute_local_gradient(start_point)
+            step_size = 100 + np.random.uniform(0, 100)  # Variable step size
             
-            # Weighted average based on distance (inverse distance weighting)
-            distances = np.array(distances)
-            values = np.array(values)
+            current = np.array(start_point)
+            new_point = current - step_size * gradient
+            new_point = self._project_to_feasible(new_point)
             
-            # Avoid division by zero
-            distances = np.maximum(distances, 1e-6)
-            weights = 1.0 / distances
-            weights = weights / weights.sum()
+            logger.info(f"Gradient exploration from point {start_idx} with step {step_size:.1f}")
+            return new_point.tolist()
+        else:
+            return self._biased_random_exploration()
+    
+    def _biased_random_exploration(self):
+        """Random exploration biased toward good regions"""
+        if self.current_best is None:
+            return self._generate_random_valid_combination()
+        
+        # Generate point around current best with larger variance
+        noise_scale = 200  # Larger than perturbation
+        biased_point = self._perturb_point(self.current_best, noise_scale)
+        
+        logger.info(f"Biased random exploration around best point")
+        return biased_point
+    
+    def _compute_local_gradient(self, point):
+        """Compute approximate gradient using finite differences"""
+        if len(self.results_data) < 2:
+            return np.random.normal(0, 0.1, 3)  # Random direction if insufficient data
+        
+        point = np.array(point)
+        gradient = np.zeros(3)
+        epsilon = 50  # Step size for finite difference
+        
+        for i in range(3):
+            # Create perturbed points
+            point_plus = point.copy()
+            point_minus = point.copy()
             
-            return np.dot(weights, values)
-        
-        # Constraint: sum must equal 1000
-        def constraint_func(x):
-            return x.sum() - 1000
-        
-        # Set up optimization problem
-        bounds = Bounds([0, 0, 0], [1000, 1000, 1000])
-        constraint = NonlinearConstraint(constraint_func, 0, 0)
-        
-        x0 = np.array(start_point)
-        
-        try:
-            result = minimize(
-                surrogate_objective,
-                x0,
-                method='SLSQP',  # Good for constraints
-                bounds=bounds,
-                constraints=constraint,
-                options={'ftol': 1e-6, 'disp': False}
-            )
+            point_plus[i] = min(1000, point_plus[i] + epsilon)
+            point_minus[i] = max(0, point_minus[i] - epsilon)
             
-            if result.success:
-                optimized = result.x
-            else:
-                logger.warning("Optimization failed, using starting point")
-                optimized = x0
-                
-        except Exception as e:
-            logger.warning(f"Optimization error: {e}, using starting point")
-            optimized = x0
+            # Ensure constraints are satisfied
+            point_plus = self._project_to_feasible(point_plus)
+            point_minus = self._project_to_feasible(point_minus)
+            
+            # Estimate function values at these points
+            f_plus = self._estimate_function_value(point_plus)
+            f_minus = self._estimate_function_value(point_minus)
+            
+            # Finite difference gradient
+            gradient[i] = (f_plus - f_minus) / (2 * epsilon)
         
-        # Round to discrete values and ensure constraints
-        optimized = np.round(optimized / 50) * 50
-        optimized = np.maximum(0, optimized)
+        # Normalize gradient
+        grad_norm = np.linalg.norm(gradient)
+        if grad_norm > 1e-6:
+            gradient = gradient / grad_norm
+        else:
+            gradient = np.random.normal(0, 0.1, 3)  # Random if flat
         
-        # Ensure sum is exactly 1000
-        if optimized.sum() != 1000:
-            optimized = optimized * (1000 / optimized.sum())
-            optimized = np.round(optimized / 50) * 50
+        return gradient
+    
+    def _estimate_function_value(self, point):
+        """Estimate function value using inverse distance weighting with exploration bonus"""
+        if len(self.results_data) == 0:
+            return 0.0
         
-        return optimized.tolist()
+        distances = []
+        values = []
+        for result in self.results_data:
+            result_point = np.array([result['R'], result['Y'], result['B']])
+            dist = np.linalg.norm(point - result_point)
+            distances.append(dist)
+            values.append(result['output'])
+        
+        distances = np.array(distances)
+        values = np.array(values)
+        
+        # Find minimum distance to add exploration bonus
+        min_dist = np.min(distances)
+        exploration_bonus = -0.1 * min_dist  # Bonus for exploring new areas
+        
+        # Inverse distance weighting with minimum distance threshold
+        distances = np.maximum(distances, 10.0)  # Avoid division by zero
+        weights = 1.0 / (distances ** 2)  # Stronger locality
+        weights = weights / weights.sum()
+        
+        estimated_value = np.dot(weights, values) + exploration_bonus
+        return estimated_value
+    
+    def _project_to_feasible(self, point):
+        """Project point to feasible region (non-negative, sum=1000, discrete)"""
+        point = np.maximum(0, point)  # Non-negative
+        
+        # Normalize to sum to 1000
+        if point.sum() > 0:
+            point = point * (1000 / point.sum())
+        else:
+            point = np.array([333.33, 333.33, 333.34])  # Default uniform
+        
+        # Round to discrete values (multiples of 50)
+        point = np.round(point / 50) * 50
+        
+        # Final adjustment to ensure exact sum
+        diff = 1000 - point.sum()
+        if diff != 0:
+            # Add difference to component with largest value
+            max_idx = np.argmax(point)
+            point[max_idx] += diff
+            point[max_idx] = max(0, point[max_idx])  # Ensure non-negative
+        
+        return point
 
 
 def initialize_campaign(upper_bound, random_seed, random_recs=False):
