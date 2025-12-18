@@ -11,7 +11,7 @@ output_dir = os.path.join("output", workflow_name, timestamp)
 
 # Initialize dispenser in virtual mode
 virtual = False
-dispenser = Liquid_Dispenser(cnc_comport="COM4", 
+dispenser = Liquid_Dispenser(cnc_comport="COM5", 
                              actuator_comport="COM3", 
                              camera_index=0, 
                              virtual=virtual,
@@ -44,7 +44,7 @@ dispenser.cnc_machine.home()
 #     print(f"Data saved to {output_csv}")
 
 
-for i in range(24):
+for i in range(12,24):
     color = dispenser.get_image_color("well_plate_camera",i, f"_{i}", square_size=60, show_crop=True)
     print(f"Color measurement well {i}: {color}")
 

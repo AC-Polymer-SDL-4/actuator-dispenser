@@ -7,6 +7,6 @@ from base_workflow import Camera
 output_dir = "output"
 os.makedirs(output_dir, exist_ok=True)
 
-camera = Camera (0, output_dir)
+camera = Camera(camera_index=0, output_dir=output_dir) #change camera index if needed
 camera.capture_and_save("_test")
 camera.cleanup()
