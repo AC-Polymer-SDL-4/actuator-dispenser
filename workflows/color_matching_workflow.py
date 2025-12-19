@@ -32,7 +32,7 @@ from base_workflow import Liquid_Dispenser, start_workflow_logging
 # 'baybe' - Bayesian optimization (default, good exploration)
 # 'gradient' - Gradient descent (fast convergence, may find local minima)
 # 'convex' - Convex optimization (global optimum if problem is convex)
-OPTIMIZER_TYPE = 'gradient'  # Options: 'baybe', 'gradient', 'convex'
+OPTIMIZER_TYPE = 'baybe'  # Options: 'baybe', 'gradient', 'convex'
 
 # Import the selected optimizer
 if OPTIMIZER_TYPE == 'baybe':
@@ -63,12 +63,6 @@ RANDOM_SEED = 31
 VIRTUAL = True #saves data by default when NOT virtual
 SAVE_DATA = True #option to save data when virtual
 WITHOUT_WATER = True
-
-# Choose optimization method at the top of this file by setting OPTIMIZER_TYPE
-# 'baybe' - Bayesian optimization (default, good exploration)
-# 'gradient' - Gradient descent (fast convergence, may find local minima)
-# 'convex' - Convex optimization (global optimum if problem is convex)
-OPTIMIZER_TYPE = 'baybe'
 
 # Choose initialization method for ALL optimizers
 # 'corner' - Deterministic corner points (pure colors, mixes, equal blend)
@@ -332,7 +326,32 @@ def main():
         
         # Step 2: Generate and create initial batch
         logger.info(f"Step 2: Generating initial batch of {INITIAL_BATCH_SIZE} recommendations")
-        campaign, initial_suggestions = get_initial_recommendations(campaign, INITIAL_BATCH_SIZE)
+
+        # For BayBE (OPTIMIZER_TYPE == 'baybe'), allow using the shared Sobol
+        # initialization or deterministic corner points. Other optimizers
+        # already honour the initialization flag internally.
+        if OPTIMIZER_TYPE == 'baybe':
+            from shared_color_initialization import generate_sobol_initialization, generate_corner_points_initialization
+
+            if use_sobol_initialization:
+                logger.info("Using shared Sobol initialization for BayBE")
+                recs = generate_sobol_initialization(INITIAL_BATCH_SIZE, RANDOM_SEED)
+            else:
+                logger.info("Using shared corner-point initialization for BayBE")
+                recs = generate_corner_points_initialization(INITIAL_BATCH_SIZE, RANDOM_SEED)
+
+            # Convert list of [R,Y,B] into DataFrame expected by workflow
+            initial_suggestions = pd.DataFrame([
+                {
+                    'R': int(r[0]),
+                    'Y': int(r[1]),
+                    'B': int(r[2]),
+                    'Water': int(1000 - (r[0] + r[1] + r[2])) if (r[0] + r[1] + r[2]) < 1000 else 0
+                }
+                for r in recs
+            ])
+        else:
+            campaign, initial_suggestions = get_initial_recommendations(campaign, INITIAL_BATCH_SIZE)
         logger.debug(f"Initial suggestions generated:\n{initial_suggestions}")
         
         # Display initial conditions for review

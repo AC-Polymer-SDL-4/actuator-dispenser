@@ -11,6 +11,8 @@ Two initialization modes:
 
 import numpy as np
 import logging
+import sys
+import traceback
 
 logger = logging.getLogger(__name__)
 
@@ -82,10 +84,10 @@ def generate_sobol_initialization(batch_size, random_seed):
     """
     try:
         from ax.utils.sampling import sobol
-        
+
         # Generate Sobol sequence in [0,1]^3
         sobol_points = sobol(n=batch_size, d=3, seed=random_seed)
-        
+
         recommendations = []
         for point in sobol_points:
             # Scale to [0,1000] and ensure sum = 1000
@@ -103,9 +105,13 @@ def generate_sobol_initialization(batch_size, random_seed):
         
         logger.info(f"Generated {len(recommendations)} Sobol sequence recommendations")
         return recommendations
-        
-    except ImportError:
-        logger.warning("ax library not available, falling back to corner points")
+    except Exception as e:
+        # Log diagnostic information to help determine which Python interpreter
+        # is running the workflow and why import failed.
+        logger.warning("Failed to import or use ax.sampling.sobol — falling back to corner points")
+        logger.warning(f"Python executable: {sys.executable}")
+        logger.warning(f"Exception during Sobol import/use: {e}")
+        logger.debug(traceback.format_exc())
         return generate_corner_points_initialization(batch_size, random_seed)
 
 def _project_to_feasible_space(point):
