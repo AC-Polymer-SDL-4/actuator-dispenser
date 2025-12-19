@@ -10,14 +10,16 @@ from scipy.optimize import minimize, Bounds
 from scipy.optimize import NonlinearConstraint
 import pandas as pd
 import logging
+from shared_color_initialization import generate_corner_points_initialization, generate_sobol_initialization
 
 logger = logging.getLogger(__name__)
 
 class GradientDescentCampaign:
-    def __init__(self, bounds, constraints, random_seed=42):
+    def __init__(self, bounds, constraints, random_seed=42, use_sobol=True):
         self.bounds = bounds
         self.constraints = constraints
         self.random_seed = random_seed
+        self.use_sobol = use_sobol  # True = Sobol, False = corner points
         self.results_data = []
         self.current_best = None
         self.current_best_score = float('inf')
@@ -28,12 +30,13 @@ class GradientDescentCampaign:
         recommendations = []
         
         if len(self.results_data) == 0:
-            # Initial random recommendations
-            logger.info("Generating initial random recommendations")
-            for _ in range(batch_size):
-                # Generate random valid combinations
-                rec = self._generate_random_valid_combination()
-                recommendations.append(rec)
+            # Use shared initialization functions for consistency across all optimizers
+            if self.use_sobol:
+                logger.info("Using shared Sobol initialization (consistent with BayBE)")
+                recommendations = generate_sobol_initialization(batch_size, self.random_seed)
+            else:
+                logger.info("Using shared corner points initialization")
+                recommendations = generate_corner_points_initialization(batch_size, self.random_seed)
         else:
             # Use gradient-based exploration from multiple starting points
             logger.info("Using gradient-based exploration for recommendations")
@@ -282,9 +285,77 @@ class GradientDescentCampaign:
         
         return point
 
+    def _generate_deterministic_initial_batch(self, batch_size):
+        """Generate deterministic initial batch for fair comparison across optimizers"""
+        # Only used when use_sobol=False for direct comparison
+        recommendations = []
+        
+        # Generate deterministic initial points using simple grid + perturbation
+        if batch_size >= 5:
+            # For standard initial batch size of 5, use a structured approach
+            base_points = [
+                [500, 250, 250],  # Red-heavy
+                [250, 500, 250],  # Yellow-heavy  
+                [250, 250, 500],  # Blue-heavy
+                [333, 333, 334],  # Balanced
+                [400, 300, 300],  # Slightly red-heavy balanced
+            ]
+            
+            # Take first batch_size points and add small deterministic perturbations
+            for i in range(min(batch_size, len(base_points))):
+                point = base_points[i].copy()
+                
+                # Add deterministic perturbation based on seed and index
+                rng = np.random.RandomState(self.random_seed + i)
+                perturbation = rng.normal(0, 50, 3)
+                point = np.array(point) + perturbation
+                
+                # Project to feasible space
+                point = self._project_to_feasible(point)
+                recommendations.append(point.tolist())
+            
+            # If we need more points, generate additional ones
+            for i in range(len(base_points), batch_size):
+                point = self._generate_seeded_random_combination(self.random_seed + i + 100)
+                recommendations.append(point)
+                
+        else:
+            # For smaller batch sizes, use seeded random generation
+            for i in range(batch_size):
+                point = self._generate_seeded_random_combination(self.random_seed + i)
+                recommendations.append(point)
+        
+        return recommendations
+    
+    def _generate_seeded_random_combination(self, seed):
+        """Generate a random valid combination with a specific seed"""
+        rng = np.random.RandomState(seed)
+        
+        # Generate random values that sum to 1000
+        total = 1000
+        
+        # Method: Generate 2 random cuts in [0, total] and use the segments
+        cuts = sorted(rng.uniform(0, total, 2))
+        r = cuts[0]
+        y = cuts[1] - cuts[0]
+        b = total - cuts[1]
+        
+        point = np.array([r, y, b])
+        point = self._project_to_feasible(point)
+        
+        return point.tolist()
+
 
 def initialize_campaign(upper_bound, random_seed, random_recs=False):
-    """Initialize gradient descent campaign"""
+    """Initialize gradient descent campaign
+    
+    Args:
+        upper_bound: Not used, kept for compatibility
+        random_seed: Random seed for reproducibility
+        random_recs: Matches BayBE logic:
+                     False = Use corner points initialization (deterministic)
+                     True = Use Sobol initialization (BayBE default behavior)
+    """
     logger.info("Initializing Gradient Descent optimization campaign")
     
     # Define bounds for each parameter (0 to 1000 microliters)
@@ -293,7 +364,16 @@ def initialize_campaign(upper_bound, random_seed, random_recs=False):
     # Define constraints (sum must equal 1000)
     constraints = {'type': 'eq', 'fun': lambda x: x.sum() - 1000}
     
-    campaign = GradientDescentCampaign(bounds, constraints, random_seed)
+    # Use the initialization method the user requested:
+    # random_recs=True → User wants Sobol
+    # random_recs=False → User wants corner points  
+    use_sobol = random_recs
+    campaign = GradientDescentCampaign(bounds, constraints, random_seed, use_sobol)
+    
+    if use_sobol:
+        logger.info("Using Sobol initialization (space-filling pseudo-random)")
+    else:
+        logger.info("Using corner points initialization (deterministic)")
     
     # Create dummy searchspace for compatibility
     searchspace = None  # Not used in gradient descent

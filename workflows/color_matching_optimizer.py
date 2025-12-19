@@ -1,5 +1,5 @@
 import sys
-sys.path.append(r"C:\Users\Imaging Controller\anaconda3\Lib\site-packages")
+sys.path.append(r"C:\Users\owenm\anaconda3\Lib\site-packages")
 from baybe.targets import NumericalTarget, TargetMode, TargetTransformation
 from baybe.objectives import SingleTargetObjective
 from baybe import Campaign

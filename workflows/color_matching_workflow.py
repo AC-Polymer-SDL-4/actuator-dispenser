@@ -64,6 +64,16 @@ VIRTUAL = True #saves data by default when NOT virtual
 SAVE_DATA = True #option to save data when virtual
 WITHOUT_WATER = True
 
+# Choose optimization method at the top of this file by setting OPTIMIZER_TYPE
+# 'baybe' - Bayesian optimization (default, good exploration)
+# 'gradient' - Gradient descent (fast convergence, may find local minima)
+# 'convex' - Convex optimization (global optimum if problem is convex)
+OPTIMIZER_TYPE = 'baybe'
+
+# Choose initialization method for ALL optimizers
+# 'corner' - Deterministic corner points (pure colors, mixes, equal blend)
+# 'sobol' - Space-filling Sobol sequence (pseudo-random with good coverage)
+INITIALIZATION_METHOD = 'sobol'
 
 # Choose color space for matching: 'RGB', 'RGBA', 'HSV', or 'LAB'
 COLOR_SPACE = 'LAB'
@@ -279,6 +289,18 @@ def main():
         logger.info("Step 1: Reading target color values from sample at well 0")
         target_color = dispenser.get_image_color("well_plate_camera", TARGET_WELL, "target_sample", square_size=60, color_space=COLOR_SPACE, show_crop=True)
 
+        # Handle virtual mode where camera may return None
+        if target_color is None:
+            logger.warning("Camera returned None (likely virtual mode), using default target color")
+            if COLOR_SPACE == 'RGB':
+                target_color = {'R': 180, 'G': 120, 'B': 80}  # Brownish target
+            elif COLOR_SPACE == 'HSV':
+                target_color = {'H': 25, 'S': 0.6, 'V': 0.7}  # Brownish in HSV
+            elif COLOR_SPACE == 'LAB':
+                target_color = {'L': 50, 'A': 20, 'B': 30}    # Brownish in LAB
+            else:
+                target_color = {'R': 180, 'G': 120, 'B': 80}  # Default to RGB
+
         logger.info(f"Target {COLOR_SPACE} values: {get_color_str(target_color)}") #log the target color values
 
         # Calculate upper bound for optimization (max possible distance) - keep RGB max for optimizer scaling
@@ -286,10 +308,14 @@ def main():
 
         # Initialize optimization campaign
         logger.info(f"Initializing {OPTIMIZER_TYPE} optimization campaign...")
+        
+        # Convert clear parameter to optimizer's expected format
+        use_sobol_initialization = (INITIALIZATION_METHOD.lower() == 'sobol')
+        
         campaign, searchspace = initialize_campaign(
             upper_bound=50,
             random_seed=RANDOM_SEED,
-            random_recs=False
+            random_recs=use_sobol_initialization
         )
         
         # Set target color for convex optimizer (if applicable)
@@ -308,6 +334,34 @@ def main():
         logger.info(f"Step 2: Generating initial batch of {INITIAL_BATCH_SIZE} recommendations")
         campaign, initial_suggestions = get_initial_recommendations(campaign, INITIAL_BATCH_SIZE)
         logger.debug(f"Initial suggestions generated:\n{initial_suggestions}")
+        
+        # Display initial conditions for review
+        logger.info("="*50)
+        logger.info("INITIAL CONDITIONS GENERATED:")
+        logger.info("="*50)
+        logger.info(f"Optimizer: {OPTIMIZER_TYPE}")
+        logger.info(f"Random seed: {RANDOM_SEED}")
+        logger.info(f"Target color ({COLOR_SPACE}): {get_color_str(target_color)}")
+        logger.info(f"Initial batch size: {INITIAL_BATCH_SIZE}")
+        logger.info("\nInitial mixing recommendations:")
+        for idx, (_, suggestion) in enumerate(initial_suggestions.iterrows()):
+            volumes_dict = {
+                'R': suggestion['R'],
+                'Y': suggestion['Y'], 
+                'B': suggestion['B'],
+                'Water': suggestion['Water'] if not WITHOUT_WATER else 0
+            }
+            volumes_ml = volumes_to_milliliters(volumes_dict)
+            logger.info(f"  Well {idx+1}: R={volumes_ml['R']:.3f}mL, Y={volumes_ml['Y']:.3f}mL, B={volumes_ml['B']:.3f}mL, Water={volumes_ml['Water']:.3f}mL")
+        
+        logger.info("="*50)
+        
+        # Pause for user review
+        if VIRTUAL:
+            response = input("\nPress Enter to continue with these initial conditions, or 'q' to quit: ")
+            if response.lower().strip() == 'q':
+                logger.info("Workflow terminated by user")
+                return
         
         # Create initial mixtures
         results_data = []
