@@ -32,7 +32,7 @@ from base_workflow import Liquid_Dispenser, start_workflow_logging
 # 'baybe' - Bayesian optimization (default, good exploration)
 # 'gradient' - Gradient descent (fast convergence, may find local minima)
 # 'convex' - Convex optimization (global optimum if problem is convex)
-OPTIMIZER_TYPE = 'gradient'  # Options: 'baybe', 'gradient', 'convex'
+OPTIMIZER_TYPE = 'convex'  # Options: 'baybe', 'gradient', 'convex'
 
 # Import the selected optimizer
 if OPTIMIZER_TYPE == 'baybe':
@@ -281,11 +281,10 @@ def main():
     try:
         # Step 1: Read target color from well 0
         logger.info("Step 1: Reading target color values from sample at well 0")
-        target_color = dispenser.get_image_color("well_plate_camera", TARGET_WELL, "target_sample", square_size=60, color_space=COLOR_SPACE, show_crop=True)
-
-        # Handle virtual mode where camera may return None
-        if target_color is None:
-            logger.warning("Camera returned None (likely virtual mode), using default target color")
+        
+        # In virtual mode, use consistent default targets instead of random generation
+        if VIRTUAL:
+            logger.warning("Virtual mode detected, using default target color instead of random generation")
             if COLOR_SPACE == 'RGB':
                 target_color = {'R': 180, 'G': 120, 'B': 80}  # Brownish target
             elif COLOR_SPACE == 'HSV':
@@ -294,6 +293,9 @@ def main():
                 target_color = {'L': 50, 'A': 20, 'B': 30}    # Brownish in LAB
             else:
                 target_color = {'R': 180, 'G': 120, 'B': 80}  # Default to RGB
+        else:
+            # Real hardware mode - read actual target color from well 0
+            target_color = dispenser.get_image_color("well_plate_camera", TARGET_WELL, "target_sample", square_size=60, color_space=COLOR_SPACE, show_crop=True)
 
         logger.info(f"Target {COLOR_SPACE} values: {get_color_str(target_color)}") #log the target color values
 
@@ -406,6 +408,14 @@ def main():
             well_idx = result['well']
             logger.debug(f"Analyzing RGB for well {well_idx}")
             
+            # Pass mixture volumes to camera for realistic simulation
+            mixture_volumes = {
+                'R': result['R_volume_ml'],  # Already in mL
+                'Y': result['Y_volume_ml'],
+                'B': result['B_volume_ml']
+            }
+            dispenser.camera.set_current_mixture(mixture_volumes)
+            
             well_color = dispenser.get_image_color("well_plate_camera", well_idx, f"experiment_{well_idx}", square_size=60, color_space=COLOR_SPACE)
             
             for key, value in well_color.items(): #store the resulting color values
@@ -500,7 +510,16 @@ def main():
                 time.sleep(2)
             
             for i, result in enumerate(batch_results):
-                well_idx = result['well'] 
+                well_idx = result['well']
+                
+                # Pass mixture volumes to camera for realistic simulation
+                mixture_volumes = {
+                    'R': result['R_volume_ml'],  # Already in mL
+                    'Y': result['Y_volume_ml'],
+                    'B': result['B_volume_ml']
+                }
+                dispenser.camera.set_current_mixture(mixture_volumes)
+                
                 well_color = dispenser.get_image_color("well_plate_camera", well_idx, f"experiment_{well_idx}", square_size=60, color_space=COLOR_SPACE)
                 
                 for key, value in well_color.items(): #store the resulting color values

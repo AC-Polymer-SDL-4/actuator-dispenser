@@ -186,11 +186,16 @@ x
                     }
 
                 elif space == "LAB":
-                    results["LAB"] = {
-                        "L": float(np.random.uniform(0, 100)),
-                        "A": float(np.random.uniform(-128, 127)),
-                        "B": float(np.random.uniform(-128, 127)),
-                    }
+                    # Use realistic color mixing if mixture volumes are available
+                    if hasattr(self, '_current_mixture_volumes'):
+                        results["LAB"] = self._simulate_realistic_color_mixing(self._current_mixture_volumes)
+                    else:
+                        # Fallback to random values if no mixture info
+                        results["LAB"] = {
+                            "L": float(np.random.uniform(0, 100)),
+                            "A": float(np.random.uniform(-128, 127)),
+                            "B": float(np.random.uniform(-128, 127)),
+                        }
 
             # Simulate crop metadata (no real file)
             results["crop_path"] = None
@@ -414,3 +419,49 @@ x
         except Exception as e:
             self.logger.error("Failed to create GIF: %s", e)
             raise
+    
+    def set_current_mixture(self, volumes):
+        """Set the current mixture volumes for realistic simulation"""
+        self._current_mixture_volumes = volumes
+    
+    def _simulate_realistic_color_mixing(self, volumes):
+        """Simulate realistic color mixing based on RGB volume ratios"""
+        r_vol = volumes.get('R', 0) * 1000  # Convert to microliters
+        y_vol = volumes.get('Y', 0) * 1000
+        b_vol = volumes.get('B', 0) * 1000
+        
+        # Normalize volumes to fractions
+        total_vol = r_vol + y_vol + b_vol
+        if total_vol == 0:
+            return {"L": 50.0, "A": 0.0, "B": 0.0}  # Neutral gray
+            
+        r_frac = r_vol / total_vol
+        y_frac = y_vol / total_vol  
+        b_frac = b_vol / total_vol
+        
+        # Define approximate LAB values for pure colors
+        red_lab = [53.0, 80.0, 67.0]      # Bright red dye
+        yellow_lab = [97.0, -21.0, 94.0]   # Yellow dye  
+        blue_lab = [32.0, 79.0, -108.0]    # Blue dye
+        
+        # Linear mixing (simplified model)
+        mixed_l = r_frac * red_lab[0] + y_frac * yellow_lab[0] + b_frac * blue_lab[0]
+        mixed_a = r_frac * red_lab[1] + y_frac * yellow_lab[1] + b_frac * blue_lab[1]  
+        mixed_b = r_frac * red_lab[2] + y_frac * yellow_lab[2] + b_frac * blue_lab[2]
+        
+        # Add realistic noise (measurement uncertainty)
+        noise_scale = 2.0  # Standard deviation
+        mixed_l += np.random.normal(0, noise_scale)
+        mixed_a += np.random.normal(0, noise_scale)
+        mixed_b += np.random.normal(0, noise_scale)
+        
+        # Clamp to valid LAB ranges
+        mixed_l = np.clip(mixed_l, 0, 100)
+        mixed_a = np.clip(mixed_a, -128, 127)
+        mixed_b = np.clip(mixed_b, -128, 127)
+        
+        return {
+            "L": float(mixed_l),
+            "A": float(mixed_a), 
+            "B": float(mixed_b),
+        }

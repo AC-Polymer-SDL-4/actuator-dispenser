@@ -239,15 +239,18 @@ class GradientDescentCampaign:
         
         if best_trajectory is not None:
             gradient_vector, step_confidence = best_trajectory
-            # Adaptive step size based on confidence
-            base_step_size = 100
+            # Adaptive step size based on confidence, but respecting 50μL minimum
+            base_step_size = 150  # Increased base to account for discretization
             adaptive_step_size = base_step_size * step_confidence
+            
+            # Ensure step size is at least 50μL for meaningful discrete steps
+            adaptive_step_size = max(50, adaptive_step_size)
             
             current = np.array(self.current_best)
             new_point = current + adaptive_step_size * gradient_vector  # Continue in same direction
             new_point = self._project_to_feasible(new_point)
             
-            logger.info(f"Traditional gradient step from best point with confidence {step_confidence:.2f}")
+            logger.info(f"Traditional gradient step from best point: step_size={adaptive_step_size:.0f}μL, confidence={step_confidence:.2f}")
             return new_point.tolist()
         else:
             # No clear trajectory - take small exploration step
@@ -267,14 +270,17 @@ class GradientDescentCampaign:
         
         if second_trajectory is not None:
             gradient_vector, step_confidence = second_trajectory
-            base_step_size = 80  # Slightly smaller for second-best path
+            base_step_size = 100  # Slightly smaller for second-best path
             adaptive_step_size = base_step_size * step_confidence
+            
+            # Ensure minimum 50μL step for discrete system
+            adaptive_step_size = max(50, adaptive_step_size)
             
             current = np.array(second_best_point)
             new_point = current + adaptive_step_size * gradient_vector
             new_point = self._project_to_feasible(new_point)
             
-            logger.info(f"Traditional gradient step from second-best point")
+            logger.info(f"Traditional gradient step from second-best point: step_size={adaptive_step_size:.0f}μL")
             return new_point.tolist()
         else:
             return self._small_exploration_step(second_best_point)
@@ -321,7 +327,8 @@ class GradientDescentCampaign:
         step_vector = curr_point - prev_point
         step_size = np.linalg.norm(step_vector)
         
-        if step_size < 1e-6:
+        # Check if step size is meaningful given 50μL discretization
+        if step_size < 50:  # Less than minimum discrete step
             return None
             
         # Normalize to unit vector
@@ -329,9 +336,10 @@ class GradientDescentCampaign:
         
         # Calculate confidence based on score improvement
         score_improvement = prev_result['output'] - best_score
-        step_confidence = min(1.0, max(0.1, score_improvement / 10.0))  # Scale confidence
+        # Scale confidence appropriately for discrete steps
+        step_confidence = min(1.0, max(0.3, score_improvement / 10.0))  # Increased minimum confidence
         
-        logger.info(f"Found trajectory: step_size={step_size:.1f}, improvement={score_improvement:.2f}")
+        logger.info(f"Found trajectory: step_size={step_size:.1f}μL, improvement={score_improvement:.2f}")
         return gradient_direction, step_confidence
     
     def _find_trajectory_to_point(self, target_point):
@@ -358,7 +366,8 @@ class GradientDescentCampaign:
         step_vector = curr_point - prev_point
         step_size = np.linalg.norm(step_vector)
         
-        if step_size < 1e-6:
+        # Check if step size is meaningful for discrete system
+        if step_size < 50:
             return None
             
         gradient_direction = step_vector / step_size
@@ -366,17 +375,18 @@ class GradientDescentCampaign:
         # Confidence based on score of this point
         current_result = self.results_data[target_experiment_idx]
         score_improvement = prev_result['output'] - current_result['output']
-        step_confidence = min(1.0, max(0.1, score_improvement / 10.0))
+        step_confidence = min(1.0, max(0.3, score_improvement / 10.0))  # Increased minimum for discrete steps
         
         return gradient_direction, step_confidence
     
     def _small_exploration_step(self, starting_point):
         """Take a small exploration step when no clear trajectory exists"""
-        perturbation = np.random.normal(0, 75, 3)  # 75 microliter exploration
+        # For discrete system, use at least 50μL perturbation
+        perturbation = np.random.normal(0, 100, 3)  # 100μL exploration (was 75)
         new_point = np.array(starting_point) + perturbation
         new_point = self._project_to_feasible(new_point)
         
-        logger.info(f"Small exploration step from {starting_point}")
+        logger.info(f"Small exploration step from {starting_point} (100μL noise)")
         return new_point.tolist()
     
     def _estimate_function_value(self, point):
