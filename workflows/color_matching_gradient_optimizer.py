@@ -6,11 +6,11 @@ Maintains the same interface as the BayBE optimizer for easy integration.
 """
 
 import numpy as np
+import sys
 from scipy.optimize import minimize, Bounds
 from scipy.optimize import NonlinearConstraint
 import pandas as pd
 import logging
-from shared_color_initialization import generate_corner_points_initialization, generate_sobol_initialization
 
 logger = logging.getLogger(__name__)
 
@@ -23,36 +23,43 @@ class GradientDescentCampaign:
         self.results_data = []
         self.current_best = None
         self.current_best_score = float('inf')
+        self.initial_recommendations = None  # Store BayBE initial recommendations
         np.random.seed(random_seed)
         
+    def set_initial_recommendations(self, recommendations_df):
+        """Set initial recommendations from BayBE for consistency"""
+        self.initial_recommendations = recommendations_df
+        
     def recommend(self, batch_size=1):
-        """Generate recommendations using gradient descent or random sampling"""
+        """Generate recommendations using traditional gradient descent"""
         recommendations = []
         
         if len(self.results_data) == 0:
-            # Use shared initialization functions for consistency across all optimizers
-            if self.use_sobol:
-                logger.info("Using shared Sobol initialization (consistent with BayBE)")
-                recommendations = generate_sobol_initialization(batch_size, self.random_seed)
+            # Use initial recommendations from BayBE if available
+            if self.initial_recommendations is not None:
+                logger.info("Using BayBE initial recommendations for consistency")
+                return self.initial_recommendations
             else:
-                logger.info("Using shared corner points initialization")
-                recommendations = generate_corner_points_initialization(batch_size, self.random_seed)
+                # Fallback to custom initialization (shouldn't happen)
+                logger.warning("No BayBE recommendations available, using fallback initialization")
+                if self.use_sobol:
+                    recommendations = self._generate_sobol_like_initialization(batch_size)
+                else:
+                    recommendations = self._generate_corner_points_initialization(batch_size)
         else:
-            # Use gradient-based exploration from multiple starting points
-            logger.info("Using gradient-based exploration for recommendations")
+            # Use traditional gradient descent - start from best points and follow sequential paths
+            logger.info("Using traditional gradient descent for recommendations")
             
             for i in range(batch_size):
-                if i == 0 and self.current_best is not None:
-                    # First recommendation: gradient step from current best
-                    rec = self._gradient_step_from_best()
+                if i == 0:
+                    # First path: continue from best point's trajectory
+                    rec = self._traditional_gradient_step_from_best()
+                elif i == 1 and len(self.results_data) >= 2:
+                    # Second path: continue from second-best point's trajectory  
+                    rec = self._traditional_gradient_step_from_second_best()
                 else:
-                    # Additional recommendations: explore different regions
-                    if len(self.results_data) >= 3:
-                        # Use gradient from different good points
-                        rec = self._explore_gradient_direction()
-                    else:
-                        # Still exploring randomly with some bias toward good regions
-                        rec = self._biased_random_exploration()
+                    # Additional paths: small random perturbations of current trajectories
+                    rec = self._perturbed_gradient_step()
                 
                 recommendations.append(rec)
         
@@ -142,97 +149,235 @@ class GradientDescentCampaign:
         
         return perturbed.tolist()
     
-    def _gradient_step_from_best(self):
-        """Take a gradient step from the current best solution"""
+    def _generate_sobol_like_initialization(self, batch_size):
+        """Generate space-filling initialization similar to Sobol sequences"""
+        recommendations = []
+        
+        # Generate space-filling points using stratified sampling
+        for i in range(batch_size):
+            # Use stratified sampling across the simplex
+            t = np.random.random(2)
+            t = np.sort(t)
+            
+            r = t[0] * 1000
+            y = (t[1] - t[0]) * 1000
+            b = (1 - t[1]) * 1000
+            
+            # Add small perturbations
+            perturbation = np.random.normal(0, 25, 3)
+            point = np.array([r, y, b]) + perturbation
+            
+            # Project to feasible space
+            point = np.maximum(0, point)
+            if point.sum() > 0:
+                point = point * (1000 / point.sum())
+            
+            # Round to discrete values
+            point = np.round(point / 50) * 50
+            
+            # Ensure sum is exactly 1000
+            total_actual = point.sum()
+            if total_actual != 1000:
+                diff = 1000 - total_actual
+                max_idx = np.argmax(point)
+                point[max_idx] += diff
+                point[max_idx] = max(0, point[max_idx])
+            
+            recommendations.append(point.astype(int).tolist())
+        
+        return recommendations
+    
+    def _generate_corner_points_initialization(self, batch_size):
+        """Generate corner points of the feasible region"""
+        corners = [
+            [1000, 0, 0],    # Pure R
+            [0, 1000, 0],    # Pure Y  
+            [0, 0, 1000],    # Pure B
+            [500, 500, 0],   # R+Y mix
+            [500, 0, 500],   # R+B mix
+            [0, 500, 500],   # Y+B mix
+            [333, 333, 334], # Equal mix
+            [800, 100, 100], # R-heavy
+            [100, 800, 100], # Y-heavy
+            [100, 100, 800], # B-heavy
+        ]
+        
+        recommendations = []
+        for i in range(batch_size):
+            if i < len(corners):
+                base_corner = corners[i]
+            else:
+                # If we need more than available corners, add noise to existing ones
+                base_corner = corners[i % len(corners)]
+            
+            # Add small random perturbation
+            noise = np.random.normal(0, 25, 3)
+            point = np.array(base_corner) + noise
+            
+            # Project to feasible space
+            point = np.maximum(0, point)
+            point = np.minimum(1000, point)
+            
+            # Normalize to sum to 1000
+            if point.sum() > 0:
+                point = point * (1000 / point.sum())
+            
+            # Round to discrete values
+            point = np.round(point / 50) * 50
+            
+            recommendations.append(point.astype(int).tolist())
+        
+        return recommendations
+    
+    def _traditional_gradient_step_from_best(self):
+        """Traditional gradient descent from best point using last actual step"""
         if self.current_best is None:
             return self._generate_random_valid_combination()
         
-        # Compute approximate gradient from nearby points
-        gradient = self._compute_local_gradient(self.current_best)
+        # Find the trajectory leading to the best point
+        best_trajectory = self._find_trajectory_to_best()
         
-        # Take a step in the negative gradient direction (minimize)
-        step_size = 150  # Adjust as needed
-        current = np.array(self.current_best)
-        new_point = current - step_size * gradient
-        
-        # Project back to feasible space
-        new_point = self._project_to_feasible(new_point)
-        
-        logger.info(f"Gradient step from {self.current_best} to {new_point.tolist()}")
-        return new_point.tolist()
-    
-    def _explore_gradient_direction(self):
-        """Explore in gradient directions from different good points"""
-        # Find second and third best points
-        sorted_results = sorted(self.results_data, key=lambda x: x['output'])
-        
-        if len(sorted_results) >= 2:
-            # Use second or third best as starting point
-            start_idx = min(1 + np.random.randint(0, min(2, len(sorted_results)-1)), len(sorted_results)-1)
-            start_result = sorted_results[start_idx]
-            start_point = [start_result['R'], start_result['Y'], start_result['B']]
+        if best_trajectory is not None:
+            gradient_vector, step_confidence = best_trajectory
+            # Adaptive step size based on confidence
+            base_step_size = 100
+            adaptive_step_size = base_step_size * step_confidence
             
-            # Compute gradient and take step
-            gradient = self._compute_local_gradient(start_point)
-            step_size = 100 + np.random.uniform(0, 100)  # Variable step size
-            
-            current = np.array(start_point)
-            new_point = current - step_size * gradient
+            current = np.array(self.current_best)
+            new_point = current + adaptive_step_size * gradient_vector  # Continue in same direction
             new_point = self._project_to_feasible(new_point)
             
-            logger.info(f"Gradient exploration from point {start_idx} with step {step_size:.1f}")
+            logger.info(f"Traditional gradient step from best point with confidence {step_confidence:.2f}")
             return new_point.tolist()
         else:
-            return self._biased_random_exploration()
+            # No clear trajectory - take small exploration step
+            return self._small_exploration_step(self.current_best)
     
-    def _biased_random_exploration(self):
-        """Random exploration biased toward good regions"""
+    def _traditional_gradient_step_from_second_best(self):
+        """Traditional gradient descent from second-best point"""
+        sorted_results = sorted(self.results_data, key=lambda x: x['output'])
+        if len(sorted_results) < 2:
+            return self._generate_random_valid_combination()
+            
+        second_best_result = sorted_results[1]
+        second_best_point = [second_best_result['R'], second_best_result['Y'], second_best_result['B']]
+        
+        # Find trajectory leading to second-best point
+        second_trajectory = self._find_trajectory_to_point(second_best_point)
+        
+        if second_trajectory is not None:
+            gradient_vector, step_confidence = second_trajectory
+            base_step_size = 80  # Slightly smaller for second-best path
+            adaptive_step_size = base_step_size * step_confidence
+            
+            current = np.array(second_best_point)
+            new_point = current + adaptive_step_size * gradient_vector
+            new_point = self._project_to_feasible(new_point)
+            
+            logger.info(f"Traditional gradient step from second-best point")
+            return new_point.tolist()
+        else:
+            return self._small_exploration_step(second_best_point)
+    
+    def _perturbed_gradient_step(self):
+        """Small perturbations of existing good trajectories"""
         if self.current_best is None:
             return self._generate_random_valid_combination()
+            
+        # Take a small step around best point with some noise
+        perturbation = np.random.normal(0, 50, 3)  # 50 microliter noise
+        new_point = np.array(self.current_best) + perturbation
+        new_point = self._project_to_feasible(new_point)
         
-        # Generate point around current best with larger variance
-        noise_scale = 200  # Larger than perturbation
-        biased_point = self._perturb_point(self.current_best, noise_scale)
-        
-        logger.info(f"Biased random exploration around best point")
-        return biased_point
+        logger.info(f"Perturbed step around best point")
+        return new_point.tolist()
     
-    def _compute_local_gradient(self, point):
-        """Compute approximate gradient using finite differences"""
+    def _find_trajectory_to_best(self):
+        """Find the actual experimental trajectory that led to the best point"""
         if len(self.results_data) < 2:
-            return np.random.normal(0, 0.1, 3)  # Random direction if insufficient data
-        
-        point = np.array(point)
-        gradient = np.zeros(3)
-        epsilon = 50  # Step size for finite difference
-        
-        for i in range(3):
-            # Create perturbed points
-            point_plus = point.copy()
-            point_minus = point.copy()
+            return None
             
-            point_plus[i] = min(1000, point_plus[i] + epsilon)
-            point_minus[i] = max(0, point_minus[i] - epsilon)
-            
-            # Ensure constraints are satisfied
-            point_plus = self._project_to_feasible(point_plus)
-            point_minus = self._project_to_feasible(point_minus)
-            
-            # Estimate function values at these points
-            f_plus = self._estimate_function_value(point_plus)
-            f_minus = self._estimate_function_value(point_minus)
-            
-            # Finite difference gradient
-            gradient[i] = (f_plus - f_minus) / (2 * epsilon)
+        # Sort by experiment order to find the path to best point
+        best_score = self.current_best_score
+        best_point = self.current_best
         
-        # Normalize gradient
-        grad_norm = np.linalg.norm(gradient)
-        if grad_norm > 1e-6:
-            gradient = gradient / grad_norm
-        else:
-            gradient = np.random.normal(0, 0.1, 3)  # Random if flat
+        # Look for the experiment that achieved this best score
+        best_experiment_idx = None
+        for i, result in enumerate(self.results_data):
+            result_point = [result['R'], result['Y'], result['B']]
+            if (np.array(result_point) == np.array(best_point)).all():
+                best_experiment_idx = i
+                break
         
-        return gradient
+        if best_experiment_idx is None or best_experiment_idx == 0:
+            return None
+            
+        # Find the previous experiment that led to this one
+        prev_result = self.results_data[best_experiment_idx - 1]
+        prev_point = np.array([prev_result['R'], prev_result['Y'], prev_result['B']])
+        curr_point = np.array(best_point)
+        
+        # Calculate actual step taken
+        step_vector = curr_point - prev_point
+        step_size = np.linalg.norm(step_vector)
+        
+        if step_size < 1e-6:
+            return None
+            
+        # Normalize to unit vector
+        gradient_direction = step_vector / step_size
+        
+        # Calculate confidence based on score improvement
+        score_improvement = prev_result['output'] - best_score
+        step_confidence = min(1.0, max(0.1, score_improvement / 10.0))  # Scale confidence
+        
+        logger.info(f"Found trajectory: step_size={step_size:.1f}, improvement={score_improvement:.2f}")
+        return gradient_direction, step_confidence
+    
+    def _find_trajectory_to_point(self, target_point):
+        """Find trajectory to any specific point"""
+        if len(self.results_data) < 2:
+            return None
+            
+        # Find experiment that achieved this point
+        target_experiment_idx = None
+        for i, result in enumerate(self.results_data):
+            result_point = [result['R'], result['Y'], result['B']]
+            if (np.array(result_point) == np.array(target_point)).all():
+                target_experiment_idx = i
+                break
+        
+        if target_experiment_idx is None or target_experiment_idx == 0:
+            return None
+            
+        # Calculate trajectory
+        prev_result = self.results_data[target_experiment_idx - 1]
+        prev_point = np.array([prev_result['R'], prev_result['Y'], prev_result['B']])
+        curr_point = np.array(target_point)
+        
+        step_vector = curr_point - prev_point
+        step_size = np.linalg.norm(step_vector)
+        
+        if step_size < 1e-6:
+            return None
+            
+        gradient_direction = step_vector / step_size
+        
+        # Confidence based on score of this point
+        current_result = self.results_data[target_experiment_idx]
+        score_improvement = prev_result['output'] - current_result['output']
+        step_confidence = min(1.0, max(0.1, score_improvement / 10.0))
+        
+        return gradient_direction, step_confidence
+    
+    def _small_exploration_step(self, starting_point):
+        """Take a small exploration step when no clear trajectory exists"""
+        perturbation = np.random.normal(0, 75, 3)  # 75 microliter exploration
+        new_point = np.array(starting_point) + perturbation
+        new_point = self._project_to_feasible(new_point)
+        
+        logger.info(f"Small exploration step from {starting_point}")
+        return new_point.tolist()
     
     def _estimate_function_value(self, point):
         """Estimate function value using inverse distance weighting with exploration bonus"""
@@ -353,8 +498,8 @@ def initialize_campaign(upper_bound, random_seed, random_recs=False):
         upper_bound: Not used, kept for compatibility
         random_seed: Random seed for reproducibility
         random_recs: Matches BayBE logic:
-                     False = Use corner points initialization (deterministic)
-                     True = Use Sobol initialization (BayBE default behavior)
+                     False = Use Sobol-like initialization (BayBE default behavior)
+                     True = Use corner points initialization (RandomRecommender)
     """
     logger.info("Initializing Gradient Descent optimization campaign")
     
@@ -364,10 +509,10 @@ def initialize_campaign(upper_bound, random_seed, random_recs=False):
     # Define constraints (sum must equal 1000)
     constraints = {'type': 'eq', 'fun': lambda x: x.sum() - 1000}
     
-    # Use the initialization method the user requested:
-    # random_recs=True → User wants Sobol
-    # random_recs=False → User wants corner points  
-    use_sobol = random_recs
+    # Match BayBE's convention:
+    # random_recs=False → Use Sobol-like (default intelligent initialization)
+    # random_recs=True → Use corner points (more deterministic)
+    use_sobol = not random_recs
     campaign = GradientDescentCampaign(bounds, constraints, random_seed, use_sobol)
     
     if use_sobol:
@@ -382,9 +527,51 @@ def initialize_campaign(upper_bound, random_seed, random_recs=False):
 
 
 def get_initial_recommendations(campaign, size):
-    """Get initial batch of recommendations"""
-    logger.info(f"Generating initial batch of {size} recommendations using gradient descent")
-    initial_suggestions = campaign.recommend(batch_size=size)
+    """Get initial batch of recommendations using BayBE initialization for consistency"""
+    logger.info(f"Getting initial batch of {size} recommendations from BayBE for consistency")
+    
+    # Import BayBE components to get identical initialization
+    sys.path.append(r"C:\Users\owenm\anaconda3\Lib\site-packages")
+    from baybe.targets import NumericalTarget, TargetMode
+    from baybe.objectives import SingleTargetObjective
+    from baybe import Campaign
+    from baybe.parameters import NumericalDiscreteParameter
+    from baybe.searchspace import SearchSpace
+    from baybe.constraints import DiscreteSumConstraint, ThresholdCondition
+    from baybe.utils.random import set_random_seed
+    from baybe.recommenders import RandomRecommender
+    
+    # Create a temporary BayBE campaign with same settings
+    set_random_seed(campaign.random_seed)
+    
+    target = NumericalTarget(name='output', mode=TargetMode.MIN, bounds=(0, 50))
+    objective = SingleTargetObjective(target=target)
+    
+    parameters = [
+        NumericalDiscreteParameter(name='R', values=np.array(range(0, 1000, 50))),
+        NumericalDiscreteParameter(name='Y', values=np.array(range(0, 1000, 50))),
+        NumericalDiscreteParameter(name='B', values=np.array(range(0, 1000, 50))),
+    ]
+    
+    constraints = [DiscreteSumConstraint(
+        parameters=["R", "Y", "B"],
+        condition=ThresholdCondition(threshold=1000, operator="=")
+    )]
+    
+    searchspace = SearchSpace.from_product(parameters=parameters, constraints=constraints)
+    
+    if campaign.use_sobol:
+        baybe_campaign = Campaign(searchspace, objective)
+    else:
+        recommender = RandomRecommender()
+        baybe_campaign = Campaign(searchspace, objective, recommender)
+    
+    # Get BayBE recommendations
+    initial_suggestions = baybe_campaign.recommend(batch_size=size)
+    
+    # Store these in the gradient campaign for consistency
+    campaign.set_initial_recommendations(initial_suggestions)
+    
     return campaign, initial_suggestions
 
 

@@ -16,12 +16,18 @@ from scipy.optimize import linprog
 logger = logging.getLogger(__name__)
 
 class ConvexOptimizationCampaign:
-    def __init__(self, random_seed=42):
+    def __init__(self, random_seed=42, use_sobol=True):
         self.random_seed = random_seed
+        self.use_sobol = use_sobol  # True = Sobol-like, False = corner points
         self.results_data = []
         self.convex_hull_points = None
         self.color_targets = {}  # Store target RGB values
+        self.initial_recommendations = None  # Store BayBE initial recommendations
         np.random.seed(random_seed)
+        
+    def set_initial_recommendations(self, recommendations_df):
+        """Set initial recommendations from BayBE for consistency"""
+        self.initial_recommendations = recommendations_df
         
     def set_target_color(self, target_rgb):
         """Set the target color for optimization"""
@@ -33,11 +39,23 @@ class ConvexOptimizationCampaign:
         recommendations = []
         
         if len(self.results_data) < 4:
-            # Need at least 4 points to form initial convex hull
-            logger.info("Generating initial random recommendations for convex hull")
-            for _ in range(batch_size):
-                rec = self._generate_corner_point()
-                recommendations.append(rec)
+            # Use initial recommendations from BayBE if available
+            if self.initial_recommendations is not None:
+                logger.info("Using BayBE initial recommendations for consistency")
+                return self.initial_recommendations
+            else:
+                # Fallback to custom initialization (shouldn't happen)
+                logger.warning("No BayBE recommendations available, using fallback initialization")
+                if self.use_sobol:
+                    logger.info("Generating Sobol-like space-filling initial recommendations")
+                    for _ in range(batch_size):
+                        rec = self._generate_sobol_like_point()
+                        recommendations.append(rec)
+                else:
+                    logger.info("Generating corner points for convex hull initialization")
+                    for _ in range(batch_size):
+                        rec = self._generate_corner_point()
+                        recommendations.append(rec)
         else:
             # Use convex optimization
             logger.info("Using convex optimization for recommendations")
@@ -113,6 +131,33 @@ class ConvexOptimizationCampaign:
         perturbed = np.round(perturbed / 50) * 50
         
         return perturbed.astype(int).tolist()
+    
+    def _generate_sobol_like_point(self):
+        """Generate space-filling point similar to Sobol sequences"""
+        # Use stratified sampling across the simplex for space-filling design
+        t = np.random.random(2)
+        t = np.sort(t)
+        
+        r = t[0] * 1000
+        y = (t[1] - t[0]) * 1000
+        b = (1 - t[1]) * 1000
+        
+        # Add small perturbations for variety
+        perturbation = np.random.normal(0, 30, 3)
+        point = np.array([r, y, b]) + perturbation
+        
+        # Project to feasible space
+        point = np.maximum(0, point)
+        point = np.minimum(1000, point)
+        
+        # Normalize to sum to 1000
+        if point.sum() > 0:
+            point = point * (1000 / point.sum())
+        
+        # Round to discrete values
+        point = np.round(point / 50) * 50
+        
+        return point.astype(int).tolist()
     
     def _update_convex_hull(self):
         """Update convex hull based on current experimental data"""
@@ -312,7 +357,9 @@ def initialize_campaign(upper_bound, random_seed, random_recs=False):
     """Initialize convex optimization campaign"""
     logger.info("Initializing Convex Optimization campaign")
     
-    campaign = ConvexOptimizationCampaign(random_seed)
+    # Use random_recs to determine initialization: False=Sobol-like, True=corner points
+    use_sobol = not random_recs
+    campaign = ConvexOptimizationCampaign(random_seed, use_sobol)
     
     # Create dummy searchspace for compatibility
     searchspace = None
@@ -321,9 +368,52 @@ def initialize_campaign(upper_bound, random_seed, random_recs=False):
 
 
 def get_initial_recommendations(campaign, size):
-    """Get initial batch of recommendations"""
-    logger.info(f"Generating initial batch of {size} recommendations using convex optimization")
-    initial_suggestions = campaign.recommend(batch_size=size)
+    """Get initial batch of recommendations using BayBE initialization for consistency"""
+    logger.info(f"Getting initial batch of {size} recommendations from BayBE for consistency")
+    
+    # Import BayBE components to get identical initialization
+    import sys
+    sys.path.append(r"C:\Users\owenm\anaconda3\Lib\site-packages")
+    from baybe.targets import NumericalTarget, TargetMode
+    from baybe.objectives import SingleTargetObjective
+    from baybe import Campaign
+    from baybe.parameters import NumericalDiscreteParameter
+    from baybe.searchspace import SearchSpace
+    from baybe.constraints import DiscreteSumConstraint, ThresholdCondition
+    from baybe.utils.random import set_random_seed
+    from baybe.recommenders import RandomRecommender
+    
+    # Create a temporary BayBE campaign with same settings
+    set_random_seed(campaign.random_seed)
+    
+    target = NumericalTarget(name='output', mode=TargetMode.MIN, bounds=(0, 50))
+    objective = SingleTargetObjective(target=target)
+    
+    parameters = [
+        NumericalDiscreteParameter(name='R', values=np.array(range(0, 1000, 50))),
+        NumericalDiscreteParameter(name='Y', values=np.array(range(0, 1000, 50))),
+        NumericalDiscreteParameter(name='B', values=np.array(range(0, 1000, 50))),
+    ]
+    
+    constraints = [DiscreteSumConstraint(
+        parameters=["R", "Y", "B"],
+        condition=ThresholdCondition(threshold=1000, operator="=")
+    )]
+    
+    searchspace = SearchSpace.from_product(parameters=parameters, constraints=constraints)
+    
+    if campaign.use_sobol:
+        baybe_campaign = Campaign(searchspace, objective)
+    else:
+        recommender = RandomRecommender()
+        baybe_campaign = Campaign(searchspace, objective, recommender)
+    
+    # Get BayBE recommendations
+    initial_suggestions = baybe_campaign.recommend(batch_size=size)
+    
+    # Store these in the convex campaign for consistency
+    campaign.set_initial_recommendations(initial_suggestions)
+    
     return campaign, initial_suggestions
 
 

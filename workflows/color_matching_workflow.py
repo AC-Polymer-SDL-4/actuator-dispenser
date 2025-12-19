@@ -32,7 +32,7 @@ from base_workflow import Liquid_Dispenser, start_workflow_logging
 # 'baybe' - Bayesian optimization (default, good exploration)
 # 'gradient' - Gradient descent (fast convergence, may find local minima)
 # 'convex' - Convex optimization (global optimum if problem is convex)
-OPTIMIZER_TYPE = 'baybe'  # Options: 'baybe', 'gradient', 'convex'
+OPTIMIZER_TYPE = 'gradient'  # Options: 'baybe', 'gradient', 'convex'
 
 # Import the selected optimizer
 if OPTIMIZER_TYPE == 'baybe':
@@ -64,10 +64,10 @@ VIRTUAL = True #saves data by default when NOT virtual
 SAVE_DATA = True #option to save data when virtual
 WITHOUT_WATER = True
 
-# Choose initialization method for ALL optimizers
-# 'corner' - Deterministic corner points (pure colors, mixes, equal blend)
-# 'sobol' - Space-filling Sobol sequence (pseudo-random with good coverage)
-INITIALIZATION_METHOD = 'sobol'
+# Choose initialization method (applies to BayBE, others will use BayBE-compatible behavior)
+# 'sobol' - BayBE's default intelligent Sobol-like initialization (recommended)
+# 'corner' - BayBE's RandomRecommender for more deterministic sampling
+INITIALIZATION_METHOD = 'sobol'  # Options: 'sobol' (default), 'corner'
 
 # Choose color space for matching: 'RGB', 'RGBA', 'HSV', or 'LAB'
 COLOR_SPACE = 'LAB'
@@ -303,13 +303,14 @@ def main():
         # Initialize optimization campaign
         logger.info(f"Initializing {OPTIMIZER_TYPE} optimization campaign...")
         
-        # Convert clear parameter to optimizer's expected format
-        use_sobol_initialization = (INITIALIZATION_METHOD.lower() == 'sobol')
+        # For BayBE: use random_recs to control initialization type
+        # For other optimizers: they will use BayBE-compatible behavior
+        use_random_recs = (INITIALIZATION_METHOD.lower() == 'corner')
         
         campaign, searchspace = initialize_campaign(
             upper_bound=50,
             random_seed=RANDOM_SEED,
-            random_recs=use_sobol_initialization
+            random_recs=use_random_recs
         )
         
         # Set target color for convex optimizer (if applicable)
@@ -324,34 +325,11 @@ def main():
             campaign.set_target_color(target_rgb)
         logger.info(f"{OPTIMIZER_TYPE.title()} optimization campaign initialized successfully")
         
-        # Step 2: Generate and create initial batch
+        # Step 2: Generate and create initial batch using BayBE's native initialization
         logger.info(f"Step 2: Generating initial batch of {INITIAL_BATCH_SIZE} recommendations")
-
-        # For BayBE (OPTIMIZER_TYPE == 'baybe'), allow using the shared Sobol
-        # initialization or deterministic corner points. Other optimizers
-        # already honour the initialization flag internally.
-        if OPTIMIZER_TYPE == 'baybe':
-            from shared_color_initialization import generate_sobol_initialization, generate_corner_points_initialization
-
-            if use_sobol_initialization:
-                logger.info("Using shared Sobol initialization for BayBE")
-                recs = generate_sobol_initialization(INITIAL_BATCH_SIZE, RANDOM_SEED)
-            else:
-                logger.info("Using shared corner-point initialization for BayBE")
-                recs = generate_corner_points_initialization(INITIAL_BATCH_SIZE, RANDOM_SEED)
-
-            # Convert list of [R,Y,B] into DataFrame expected by workflow
-            initial_suggestions = pd.DataFrame([
-                {
-                    'R': int(r[0]),
-                    'Y': int(r[1]),
-                    'B': int(r[2]),
-                    'Water': int(1000 - (r[0] + r[1] + r[2])) if (r[0] + r[1] + r[2]) < 1000 else 0
-                }
-                for r in recs
-            ])
-        else:
-            campaign, initial_suggestions = get_initial_recommendations(campaign, INITIAL_BATCH_SIZE)
+        logger.info(f"Using {INITIALIZATION_METHOD} initialization with BayBE's native methods")
+            
+        campaign, initial_suggestions = get_initial_recommendations(campaign, INITIAL_BATCH_SIZE)
         logger.debug(f"Initial suggestions generated:\n{initial_suggestions}")
         
         # Display initial conditions for review

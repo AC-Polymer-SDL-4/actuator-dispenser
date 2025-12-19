@@ -1,4 +1,16 @@
 """
+DEPRECATED: This module is no longer used.
+
+Initialization methods are now built into each optimizer individually:
+- BayBE uses its native initialization
+- Gradient optimizer has built-in Sobol-like and corner point methods  
+- Convex optimizer has built-in Sobol-like and corner point methods
+
+This file remains for reference only and should not be imported.
+The ax library dependency has been completely removed.
+
+---
+
 Shared Initialization Functions for Color Matching Optimizers
 
 This module provides unified initialization strategies that can be used by
