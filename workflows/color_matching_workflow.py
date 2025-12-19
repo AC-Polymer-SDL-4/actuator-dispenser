@@ -32,7 +32,7 @@ from base_workflow import Liquid_Dispenser, start_workflow_logging
 # 'baybe' - Bayesian optimization (default, good exploration)
 # 'gradient' - Gradient descent (fast convergence, may find local minima)
 # 'convex' - Convex optimization (global optimum if problem is convex)
-OPTIMIZER_TYPE = 'baybe'  # Options: 'baybe', 'gradient', 'convex'
+OPTIMIZER_TYPE = 'gradient'  # Options: 'baybe', 'gradient', 'convex'
 
 # Import the selected optimizer
 if OPTIMIZER_TYPE == 'baybe':
