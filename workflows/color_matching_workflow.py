@@ -29,7 +29,10 @@ Workflow:
 from base_workflow import Liquid_Dispenser, start_workflow_logging
 
 # Optimizer Selection - Change this to switch optimization methods
-OPTIMIZER_TYPE = 'gradient'  # Options: 'baybe', 'gradient', 'convex'
+# 'baybe' - Bayesian optimization (default, good exploration)
+# 'gradient' - Gradient descent (fast convergence, may find local minima)
+# 'convex' - Convex optimization (global optimum if problem is convex)
+OPTIMIZER_TYPE = 'baybe'  # Options: 'baybe', 'gradient', 'convex'
 
 # Import the selected optimizer
 if OPTIMIZER_TYPE == 'baybe':
@@ -51,13 +54,13 @@ import cv2
 
 
 # Workflow configuration
-INITIAL_BATCH_SIZE = 5  # First batch of wells to create (5)
+INITIAL_BATCH_SIZE = 5 # First batch of wells to create (5)
 SUBSEQUENT_BATCH_SIZE = 3  # Size of subsequent batches (3)
 MAX_WELLS = 24  # Maximum number of wells on plate (24)
 TARGET_WELL = 0  # Index of well containing the target sample
 RANDOM_SEED = 31
 
-VIRTUAL = True #saves data by default when NOT virtual
+VIRTUAL = False #saves data by default when NOT virtual
 SAVE_DATA = True #option to save data when virtual
 WITHOUT_WATER = True
 
@@ -73,7 +76,7 @@ OPTIMIZER_TYPE = 'baybe'
 INITIALIZATION_METHOD = 'sobol'
 
 # Choose color space for matching: 'RGB', 'RGBA', 'HSV', or 'LAB'
-COLOR_SPACE = 'HSV'
+COLOR_SPACE = 'LAB'
 COLOR_SPACE = COLOR_SPACE.upper() #just to make sure it's in uppercase
 
 # Reservoir mapping
@@ -90,16 +93,16 @@ RESERVOIRS = {
     'waste': 9   # Waste container
 }
 
-SPEED = 32768  #default speed for dispensing (32768/2 with old syringe)
-RINSE_SPEED = 32768 #(32768*1.25 for old syringe)
-CONDITION_BEFORE_RINSE = True  #Whether to do a condition step before rinsing (for concentrated solutions -- or else rinse solution will be very contaminated)
+SPEED = 41000  #default speed for dispensing (32768/2 with old syringe)
+RINSE_SPEED = 41000   #speed for rinsing needle
+CONDITION_BEFORE_RINSE = True  #Whether to do a condition step before rinsing (used for concentrated solutions to contaminate the wash a bit less)
 
 # Get workflow name (file name without extension)
 workflow_name = os.path.splitext(os.path.basename(__file__))[0]
 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
 virtual_tag = "_virtual" if VIRTUAL else ""
-output_dir = os.path.join("output", workflow_name, f"{timestamp}_{virtual_tag}_{COLOR_SPACE}")
+output_dir = os.path.join("output", workflow_name, f"{timestamp}{virtual_tag}_{COLOR_SPACE}")
 
 
 def rgb_distance(rgb1, rgb2):
@@ -261,7 +264,7 @@ def main():
     # Initialize hardware (virtual mode for testing)
     logger.info("Initializing hardware...")
     dispenser = Liquid_Dispenser(
-        cnc_comport="COM4", 
+        cnc_comport="COM5", 
         actuator_comport="COM3", #non-gaming computer
         virtual=VIRTUAL,  # Set to False for real hardware
         camera_index=0, #for non-gaming computer

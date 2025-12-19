@@ -5,7 +5,7 @@ act = ActuatorRemote(port="COM3", virtual=False, log_level=logging.DEBUG, timeou
 
 #SINGLE TESTS
 # print("RET:", act.retract(0.1, speed=65000))
-print("EXT:", act.extend(0.1, speed=65000))
+# print("EXT:", act.extend(0.1, speed=65000))
 
 time.sleep(1)
 print("STOP:", act.stop())
