@@ -44,7 +44,7 @@ dispenser.cnc_machine.home()
 #     print(f"Data saved to {output_csv}")
 
 
-for i in range(12,24):
+for i in range(24):
     color = dispenser.get_image_color("well_plate_camera",i, f"_{i}", square_size=60, show_crop=True)
     print(f"Color measurement well {i}: {color}")
 

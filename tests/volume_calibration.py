@@ -41,14 +41,14 @@ def dispense_by_time(dispenser, source_location, source_index, retract_time, des
 # CALIBRATION PARAMETERS
 CALIBRATION_TYPE = 'volume' #'time' or 'volume'
 TIMES = [0.05, 0.25, 0.5, 0.75, 1, 1.25] #times to try in seconds (for time-based calibration)
-VOLUMES = [0.025, 0.05, 0.1, 0.25, 0.45] #volumes to try in mL (for volume-based calibration)
+VOLUMES = [0.025, 0.05, 0.1, 0.25, 0.45] #volumes to try in mL (for volume-based calibration) -- redo 0.025
 
 BUFFER = 0.25  #extra time to push out in seconds (used in both time and volume-based calibration)
 BLOWOUT_VOL = 0.28 #0.28 is default (only used in volume-based calibration)
 AIR_TIME = 0.7 #default air buffer time (only used in time-based calibration)
-SPEED = 41000 #32768 is default, 65000 is maximum speed
+SPEED = 32768 #32768 is default, 65000 is maximum speed
 
-NUM_REPLICATES =  4 #number of replicate dispenses per volume or time
+NUM_REPLICATES = 4 #number of replicate dispenses per volume or time
 well_counter = 0 #starting well index
 MAX_WELLS = 24 #max number of wells to use for calibration (24 for 24-well plate)
 
