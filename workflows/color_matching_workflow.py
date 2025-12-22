@@ -32,7 +32,7 @@ from base_workflow import Liquid_Dispenser, start_workflow_logging
 # 'baybe' - Bayesian optimization (default, good exploration)
 # 'gradient' - Gradient descent (fast convergence, may find local minima)
 # 'convex' - Convex optimization (global optimum if problem is convex)
-OPTIMIZER_TYPE = 'baybe'  # Options: 'baybe', 'gradient', 'convex'
+OPTIMIZER_TYPE = 'convex'  # Options: 'baybe', 'gradient', 'convex'
 
 # Import the selected optimizer
 if OPTIMIZER_TYPE == 'baybe':
@@ -64,10 +64,10 @@ VIRTUAL = True #saves data by default when NOT virtual
 SAVE_DATA = True #option to save data when virtual
 WITHOUT_WATER = True
 
-# Choose initialization method for ALL optimizers
-# 'corner' - Deterministic corner points (pure colors, mixes, equal blend)
-# 'sobol' - Space-filling Sobol sequence (pseudo-random with good coverage)
-INITIALIZATION_METHOD = 'sobol'
+# Choose initialization method (applies to BayBE, others will use BayBE-compatible behavior)
+# 'sobol' - BayBE's default intelligent Sobol-like initialization (recommended)
+# 'corner' - BayBE's RandomRecommender for more deterministic sampling
+INITIALIZATION_METHOD = 'sobol'  # Options: 'sobol' (default), 'corner'
 
 # Choose color space for matching: 'RGB', 'RGBA', 'HSV', or 'LAB'
 COLOR_SPACE = 'LAB'
@@ -281,11 +281,10 @@ def main():
     try:
         # Step 1: Read target color from well 0
         logger.info("Step 1: Reading target color values from sample at well 0")
-        target_color = dispenser.get_image_color("well_plate_camera", TARGET_WELL, "target_sample", square_size=60, color_space=COLOR_SPACE, show_crop=True)
-
-        # Handle virtual mode where camera may return None
-        if target_color is None:
-            logger.warning("Camera returned None (likely virtual mode), using default target color")
+        
+        # In virtual mode, use consistent default targets instead of random generation
+        if VIRTUAL:
+            logger.warning("Virtual mode detected, using default target color instead of random generation")
             if COLOR_SPACE == 'RGB':
                 target_color = {'R': 180, 'G': 120, 'B': 80}  # Brownish target
             elif COLOR_SPACE == 'HSV':
@@ -294,6 +293,9 @@ def main():
                 target_color = {'L': 50, 'A': 20, 'B': 30}    # Brownish in LAB
             else:
                 target_color = {'R': 180, 'G': 120, 'B': 80}  # Default to RGB
+        else:
+            # Real hardware mode - read actual target color from well 0
+            target_color = dispenser.get_image_color("well_plate_camera", TARGET_WELL, "target_sample", square_size=60, color_space=COLOR_SPACE, show_crop=True)
 
         logger.info(f"Target {COLOR_SPACE} values: {get_color_str(target_color)}") #log the target color values
 
@@ -303,13 +305,14 @@ def main():
         # Initialize optimization campaign
         logger.info(f"Initializing {OPTIMIZER_TYPE} optimization campaign...")
         
-        # Convert clear parameter to optimizer's expected format
-        use_sobol_initialization = (INITIALIZATION_METHOD.lower() == 'sobol')
+        # For BayBE: use random_recs to control initialization type
+        # For other optimizers: they will use BayBE-compatible behavior
+        use_random_recs = (INITIALIZATION_METHOD.lower() == 'corner')
         
         campaign, searchspace = initialize_campaign(
             upper_bound=50,
             random_seed=RANDOM_SEED,
-            random_recs=use_sobol_initialization
+            random_recs=use_random_recs
         )
         
         # Set target color for convex optimizer (if applicable)
@@ -324,34 +327,11 @@ def main():
             campaign.set_target_color(target_rgb)
         logger.info(f"{OPTIMIZER_TYPE.title()} optimization campaign initialized successfully")
         
-        # Step 2: Generate and create initial batch
+        # Step 2: Generate and create initial batch using BayBE's native initialization
         logger.info(f"Step 2: Generating initial batch of {INITIAL_BATCH_SIZE} recommendations")
-
-        # For BayBE (OPTIMIZER_TYPE == 'baybe'), allow using the shared Sobol
-        # initialization or deterministic corner points. Other optimizers
-        # already honour the initialization flag internally.
-        if OPTIMIZER_TYPE == 'baybe':
-            from shared_color_initialization import generate_sobol_initialization, generate_corner_points_initialization
-
-            if use_sobol_initialization:
-                logger.info("Using shared Sobol initialization for BayBE")
-                recs = generate_sobol_initialization(INITIAL_BATCH_SIZE, RANDOM_SEED)
-            else:
-                logger.info("Using shared corner-point initialization for BayBE")
-                recs = generate_corner_points_initialization(INITIAL_BATCH_SIZE, RANDOM_SEED)
-
-            # Convert list of [R,Y,B] into DataFrame expected by workflow
-            initial_suggestions = pd.DataFrame([
-                {
-                    'R': int(r[0]),
-                    'Y': int(r[1]),
-                    'B': int(r[2]),
-                    'Water': int(1000 - (r[0] + r[1] + r[2])) if (r[0] + r[1] + r[2]) < 1000 else 0
-                }
-                for r in recs
-            ])
-        else:
-            campaign, initial_suggestions = get_initial_recommendations(campaign, INITIAL_BATCH_SIZE)
+        logger.info(f"Using {INITIALIZATION_METHOD} initialization with BayBE's native methods")
+            
+        campaign, initial_suggestions = get_initial_recommendations(campaign, INITIAL_BATCH_SIZE)
         logger.debug(f"Initial suggestions generated:\n{initial_suggestions}")
         
         # Display initial conditions for review
@@ -427,6 +407,14 @@ def main():
         for i, result in enumerate(results_data):
             well_idx = result['well']
             logger.debug(f"Analyzing RGB for well {well_idx}")
+            
+            # Pass mixture volumes to camera for realistic simulation
+            mixture_volumes = {
+                'R': result['R_volume_ml'],  # Already in mL
+                'Y': result['Y_volume_ml'],
+                'B': result['B_volume_ml']
+            }
+            dispenser.camera.set_current_mixture(mixture_volumes)
             
             well_color = dispenser.get_image_color("well_plate_camera", well_idx, f"experiment_{well_idx}", square_size=60, color_space=COLOR_SPACE)
             
@@ -522,7 +510,16 @@ def main():
                 time.sleep(2)
             
             for i, result in enumerate(batch_results):
-                well_idx = result['well'] 
+                well_idx = result['well']
+                
+                # Pass mixture volumes to camera for realistic simulation
+                mixture_volumes = {
+                    'R': result['R_volume_ml'],  # Already in mL
+                    'Y': result['Y_volume_ml'],
+                    'B': result['B_volume_ml']
+                }
+                dispenser.camera.set_current_mixture(mixture_volumes)
+                
                 well_color = dispenser.get_image_color("well_plate_camera", well_idx, f"experiment_{well_idx}", square_size=60, color_space=COLOR_SPACE)
                 
                 for key, value in well_color.items(): #store the resulting color values
