@@ -290,7 +290,14 @@ class ConvexOptimizationCampaign:
             
             # Solve
             problem = cp.Problem(objective, constraints)
-            problem.solve(solver=cp.ECOS)
+            try:
+                problem.solve(solver=cp.ECOS)
+            except Exception as e:
+                logger.warning(f"ECOS solver failed ({e}); falling back to SCS/default solver")
+                try:
+                    problem.solve(solver=cp.SCS)
+                except Exception:
+                    problem.solve()
             
             if problem.status == cp.OPTIMAL:
                 solution = x.value
@@ -331,7 +338,14 @@ class ConvexOptimizationCampaign:
             ]
             
             problem = cp.Problem(objective, constraints)
-            problem.solve(solver=cp.ECOS)
+            try:
+                problem.solve(solver=cp.ECOS)
+            except Exception as e:
+                logger.warning(f"Surrogate convex optimization: ECOS failed ({e}); falling back to SCS/default solver")
+                try:
+                    problem.solve(solver=cp.SCS)
+                except Exception:
+                    problem.solve()
             
             if problem.status == cp.OPTIMAL:
                 solution = x.value

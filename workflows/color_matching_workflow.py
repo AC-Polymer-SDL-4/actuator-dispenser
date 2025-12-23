@@ -60,7 +60,7 @@ MAX_WELLS = 24  # Maximum number of wells on plate (24)
 TARGET_WELL = 0  # Index of well containing the target sample
 RANDOM_SEED = 31
 
-VIRTUAL = True #saves data by default when NOT virtual
+VIRTUAL = False #saves data by default when NOT virtual
 SAVE_DATA = True #option to save data when virtual
 WITHOUT_WATER = True
 
@@ -87,8 +87,8 @@ RESERVOIRS = {
     'waste': 9   # Waste container
 }
 
-SPEED = 41000  #default speed for dispensing (32768/2 with old syringe)
-RINSE_SPEED = 41000   #speed for rinsing needle
+SPEED = 32768  #speed for dispensing (default is 32768)
+RINSE_SPEED = 32768   #speed for rinsing needle
 CONDITION_BEFORE_RINSE = True  #Whether to do a condition step before rinsing (used for concentrated solutions to contaminate the wash a bit less)
 
 # Get workflow name (file name without extension)
