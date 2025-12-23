@@ -113,7 +113,7 @@ class Liquid_Dispenser:
         """
         # Volume calculation constants
         MAX_TIME = 1.95 #The maximum time for a single dispense in seconds (for liquid transfer AND blowout time!) -- edit based on calibration
-        SLOPE = 0.3772  # Time per mL conversion factor (seconds/mL, from calibration), before: 0.4295, 0.4679, 0.4052, 0.3865 (new metal syringe)
+        SLOPE = 0.4061  # Time per mL conversion factor (seconds/mL, from calibration), before: 0.4295, 0.4679, 0.4052, 0.3865 (new metal syringe)
 
         SYRINGE_MAX_VOL = MAX_TIME*SLOPE #0.76  
         transfer_max_vol = SYRINGE_MAX_VOL-blowout_vol  # Maximum volume per dispense in mL (hardware limitation)
