@@ -16,9 +16,10 @@ from scipy.optimize import linprog
 logger = logging.getLogger(__name__)
 
 class ConvexOptimizationCampaign:
-    def __init__(self, random_seed=42, use_sobol=True):
+    def __init__(self, random_seed=42, use_sobol=True, grid_resolution=50):
         self.random_seed = random_seed
         self.use_sobol = use_sobol  # True = Sobol-like, False = corner points
+        self.grid_resolution = grid_resolution  # Grid resolution in µL (default 50)
         self.results_data = []
         self.convex_hull_points = None
         self.color_targets = {}  # Store target RGB values
@@ -33,6 +34,36 @@ class ConvexOptimizationCampaign:
         """Set the target color for optimization"""
         self.target_rgb = np.array(target_rgb)
         logger.info(f"Target color set to RGB: {target_rgb}")
+    
+    def _project_to_grid(self, point):
+        """Project a point to the discrete grid with specified resolution"""
+        point = np.array(point)
+        
+        # Round to grid resolution
+        projected = np.round(point / self.grid_resolution) * self.grid_resolution
+        
+        # Ensure non-negative
+        projected = np.maximum(0, projected)
+        
+        # Ensure total volume constraint (sum = 1000)
+        total = np.sum(projected)
+        if total > 0:
+            projected = projected * (1000.0 / total)
+            # Re-round after normalization to maintain grid
+            projected = np.round(projected / self.grid_resolution) * self.grid_resolution
+            
+            # Final adjustment to ensure exact sum of 1000
+            diff = 1000 - np.sum(projected)
+            if abs(diff) > 0:
+                # Add the difference to the largest component
+                max_idx = np.argmax(projected)
+                projected[max_idx] += diff
+        
+        # Ensure bounds
+        projected = np.minimum(1000, projected)
+        projected = np.maximum(0, projected)
+        
+        return projected.astype(int)
     
     def recommend(self, batch_size=1):
         """Generate recommendations using convex optimization"""
@@ -73,14 +104,16 @@ class ConvexOptimizationCampaign:
                 
                 recommendations.append(rec)
         
-        # Convert to DataFrame format
+        # Convert to DataFrame format with grid projection
         df_data = []
         for rec in recommendations:
+            # Ensure grid projection
+            projected_rec = self._project_to_grid(rec)
             df_data.append({
-                'R': rec[0],
-                'Y': rec[1],
-                'B': rec[2],
-                'Water': 1000 - sum(rec) if sum(rec) < 1000 else 0
+                'R': int(projected_rec[0]),
+                'Y': int(projected_rec[1]),
+                'B': int(projected_rec[2]),
+                'Water': int(1000 - sum(projected_rec))
             })
         
         return pd.DataFrame(df_data)
@@ -127,10 +160,10 @@ class ConvexOptimizationCampaign:
         if perturbed.sum() > 0:
             perturbed = perturbed * (1000 / perturbed.sum())
         
-        # Round to nearest 50
-        perturbed = np.round(perturbed / 50) * 50
+        # Project to grid
+        projected = self._project_to_grid(perturbed)
         
-        return perturbed.astype(int).tolist()
+        return projected.tolist()
     
     def _generate_sobol_like_point(self):
         """Generate space-filling point similar to Sobol sequences"""
@@ -154,31 +187,46 @@ class ConvexOptimizationCampaign:
         if point.sum() > 0:
             point = point * (1000 / point.sum())
         
-        # Round to discrete values
-        point = np.round(point / 50) * 50
+        # Project to grid
+        projected = self._project_to_grid(point)
         
-        return point.astype(int).tolist()
+        return projected.tolist()
     
     def _update_convex_hull(self):
         """Update convex hull based on current experimental data"""
-        if len(self.results_data) < 4:
+        if len(self.results_data) < 3:  # Need at least 3 points for 2D hull
             return
             
         # Extract points in parameter space (R, Y, B)
-        points = []
+        points_3d = []
         for result in self.results_data:
-            points.append([result['R'], result['Y'], result['B']])
+            points_3d.append([result['R'], result['Y'], result['B']])
         
-        points = np.array(points)
+        points_3d = np.array(points_3d)
         
         try:
-            # Compute convex hull in 3D parameter space
-            hull = ConvexHull(points)
-            self.convex_hull_points = points[hull.vertices]
-            logger.info(f"Updated convex hull with {len(self.convex_hull_points)} vertices")
+            # Since R + Y + B = 1000 (constraint), all points lie on a 2D plane in 3D space
+            # Project to 2D by using only R and Y (B is determined by constraint)
+            points_2d = points_3d[:, :2]  # Take only R and Y coordinates
+            
+            # Compute 2D convex hull
+            hull_2d = ConvexHull(points_2d)
+            
+            # Convert back to 3D by reconstructing B values
+            hull_vertices_2d = points_2d[hull_2d.vertices]
+            hull_vertices_3d = []
+            for vertex_2d in hull_vertices_2d:
+                r, y = vertex_2d
+                b = 1000 - r - y  # Reconstruct B from constraint
+                hull_vertices_3d.append([r, y, b])
+            
+            self.convex_hull_points = np.array(hull_vertices_3d)
+            logger.info(f"Updated 2D convex hull with {len(self.convex_hull_points)} vertices")
+            
         except Exception as e:
-            logger.warning(f"Could not compute convex hull: {e}")
-            self.convex_hull_points = points
+            logger.warning(f"Could not compute 2D convex hull: {e}")
+            # Fallback: use all points as hull vertices
+            self.convex_hull_points = points_3d
     
     def _solve_convex_problem(self):
         """Solve convex optimization problem to minimize color difference"""
@@ -246,8 +294,8 @@ class ConvexOptimizationCampaign:
             
             if problem.status == cp.OPTIMAL:
                 solution = x.value
-                solution = np.round(solution / 50) * 50  # Round to discrete values
-                return solution.astype(int).tolist()
+                projected = self._project_to_grid(solution)  # Project to grid
+                return projected.tolist()
             else:
                 logger.warning(f"Convex problem not optimal: {problem.status}")
                 return self._solve_surrogate_convex_problem(x)
@@ -287,8 +335,8 @@ class ConvexOptimizationCampaign:
             
             if problem.status == cp.OPTIMAL:
                 solution = x.value
-                solution = np.round(solution / 50) * 50
-                return solution.astype(int).tolist()
+                projected = self._project_to_grid(solution)
+                return projected.tolist()
             else:
                 return self._solve_linear_approximation()
                 
@@ -322,15 +370,15 @@ class ConvexOptimizationCampaign:
         if new_point.sum() > 0:
             new_point = new_point * (1000 / new_point.sum())
         
-        # Round to discrete values
-        new_point = np.round(new_point / 50) * 50
+        # Project to grid
+        projected = self._project_to_grid(new_point)
         
-        return new_point.astype(int).tolist()
+        return projected.tolist()
     
     def _explore_convex_boundary(self):
         """Explore the boundary of the convex hull"""
         
-        if self.convex_hull_points is None or len(self.convex_hull_points) < 3:
+        if self.convex_hull_points is None or len(self.convex_hull_points) < 2:
             return self._generate_corner_point()
         
         # Generate random convex combination of hull vertices
@@ -342,24 +390,19 @@ class ConvexOptimizationCampaign:
         for i, weight in enumerate(weights):
             new_point += weight * self.convex_hull_points[i]
         
-        # Round to discrete values
-        new_point = np.round(new_point / 50) * 50
+        # Project to grid
+        projected = self._project_to_grid(new_point)
         
-        # Ensure constraints
-        new_point = np.maximum(0, new_point)
-        if new_point.sum() > 0:
-            new_point = new_point * (1000 / new_point.sum())
-        
-        return new_point.astype(int).tolist()
+        return projected.tolist()
 
 
-def initialize_campaign(upper_bound, random_seed, random_recs=False):
+def initialize_campaign(upper_bound, random_seed, random_recs=False, grid_resolution=50):
     """Initialize convex optimization campaign"""
-    logger.info("Initializing Convex Optimization campaign")
+    logger.info(f"Initializing Convex Optimization campaign with {grid_resolution}µL grid resolution")
     
     # Use random_recs to determine initialization: False=Sobol-like, True=corner points
     use_sobol = not random_recs
-    campaign = ConvexOptimizationCampaign(random_seed, use_sobol)
+    campaign = ConvexOptimizationCampaign(random_seed, use_sobol, grid_resolution)
     
     # Create dummy searchspace for compatibility
     searchspace = None
