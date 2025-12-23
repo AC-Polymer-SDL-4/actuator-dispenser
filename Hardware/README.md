@@ -33,13 +33,10 @@ All materials required to build this dispenser are listed below:
 |Total Cost||||**approximately 500**||
 
 ### Generic Materials and Tools needed
-|Item|Manufacturer|Product Number|Qty|Cost ($USD)|Notes|
-|--|--|--|--|--|--|
-|22 AWG Wires|Adafruit|[1311](https://www.adafruit.com/product/1311)|40 cm|15.95||
-|M3 **x 16mm** Screw|Adafruit|[1311](https://www.adafruit.com/product/1311)|1|15.95|Locking mechanism between syringe plunger and actuator|
-|M3 Nut|Adafruit|[1311](https://www.adafruit.com/product/1311)|1|15.95|Locking mechanism between syringe plunger and actuator|
-|M6 **x 20mm** Screw|Adafruit|[1311](https://www.adafruit.com/product/1311)|4|15.95|Holds deckware on CNC deck|
-
+- Wires
+- Screws (4 * M6-20mm, 1 * M3-25mm)
+- Nut (M3)
+- 1*Metal rod (2mm diameter, at least 80mm in length)
 - Pliers
 - Allen keys
 - Super glue
@@ -71,7 +68,7 @@ _Parts and materials required:_
 -	Connector terminal with barrel opening
 -	metal rod with 2mm diameter
 
-1. If using the optional electronics box, place the UNO R3 microcontroller at the bottom of the box, with the USB port aligned with the rectangular slot at the side of the box
+1. If using the optional electronics box, place the UNO R4 microcontroller at the bottom of the box, with the USB port aligned with the rectangular slot at the side of the box
 2. Mount the motor shield above the microcontroller and ensure they are attached securely
 3. To connect the power supply, insert a red wire into the positive (+) terminal and a black wire into the negative (-) terminal of the barrel connector. Tighten the screws and gently tug to confirm the wires are secured. Then, connect the red wire to the VIN pin and the black wire to the GND pins on the motor shield. <br>
 <img width="450" alt="19" src="https://github.com/user-attachments/assets/ce17f643-c322-48c5-9257-334810c5d040" />
