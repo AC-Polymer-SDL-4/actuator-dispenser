@@ -46,17 +46,16 @@ All materials required to build this dispenser are listed below:
 ## Step 2: 3D-print Required Parts
 Please print the following .STL files in the filament and with the supports specified in the Notes section. The editable Fusion 360 files for all these parts are provided in the `fusion files` folder, so this tool can be adapted to other types of labware, syringes, actuators or gantry systems.
 
-|File|Filament|Print instructions|
-|--|--|--|
-|Plunger_TPU_Cap.stl|95A TPU|print with 5mm outer brim, 0.1mm spacing|
-|Actuator_Holder.stl|PLA|Orient to the side, print with tree supports and extra painted supports in the hanging circular ridges|
-|Plunger_Holder.stl|PETG|Print with tree support in the given orientation|
-|Backlight_clamp.stl|PLA|Print with supports|
-|Backlight_clamp_left.stl|PLA|Print with supports|
-|Deckware_Holder.stl|PLA|Print with supports|
-|Reservoir_Spacer.stl|PLA|Print upside down (in the orientation provided), with normal supports|
-|Electronics box|PLA|Optional|
-
+|File|Purpose|Filament|Print instructions|
+|--|--|--|--|
+|Actuator_Holder_Plunger_Holder.stl|Holds together the syringe plunger and actuator|PETG|Print in the given orientation, with tree supports and 0.12mm layer height preset|
+|Actuator_Holder_Tool_Head.stl|Holds parts together in CNC tool holder|PLA|Print in the given orientation, with tree supports and extra painted supports in the hanging circular ridges|
+|Backlight_Clamp_Left.stl|Clamps backlight to CNC deck|PLA|Print with regular supports|
+|Backlight_Clamp_Right.stl|Clamps backlight to CNC deck|PLA|Print with regular supports|
+|Deckware_Holder.stl|Holds labware on CNC deck|PLA|Print with regular supports|
+|Electronics_Box.stl|Optional, for organizing microcontroller and wires|PETG|n/a|
+|Plunger_TPU_Cap.stl|Padding for metal syringe plunger|95A TPU|Print with 5mm outer brim, 0.1mm spacing|
+|Reservoir_Spacer.stl|Raises reservoir to access bottom of wells|PLA|Print in the orientation provided, with normal supports|
 
 ## Step 3: Assemble the CNC machine 
 The Genmitsu 3014 CNC machine comes with all the parts needed to build the CNC Machine and a manual with step-by-step instructions. We find that the Grblcontrol (Candle) app is a user-friendly way to control the CNC machine, when starting off, capturing the locations of the labware and for troubleshooting.
