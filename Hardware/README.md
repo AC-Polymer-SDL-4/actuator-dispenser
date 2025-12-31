@@ -1,12 +1,12 @@
 # Hardware Assembly Guide
 ## Summary of steps
-_Total assembly time: ~4 hours_
+_Total assembly time: approximately 4 hours_
 
 1.	Order the required parts in the BoM.
-2.	3D-print the files in the `3D_models` folder including the tool head and optionally the deckware holder, backlight clamps and electronics casing
+2.	3D-print the files in the `Hardware/STL_Files` folder including the tool head, deckware holder, backlight clamps and optional electronics casing. If needed, editable models are provided in `Hardware/Fusion_Files`
 3.	Assemble the CNC machine following the manufacturer's instructions (_2 hours_)
 4.	Connect the actuator to the microcontroller and power supply (_20 mins_)
-5.	Connect the device to your computer and code setup (_25+ minutes, depending on your operating system_)
+5.	Connect the device to your computer and code setup (_25+ mins, depending on your operating system_)
 6.	Assemble the tool head (_50 mins_)
 7.	Mount the backlight and deck ware holder (_optional, 5 mins_)
    
@@ -17,7 +17,7 @@ Please also read through the [**important notes**](#%EF%B8%8Fimportant-notes-thi
 All materials required to build this dispenser are listed below:
 
 ### Bill of Materials (BoM)
-|Item|Manufacturer|Product Number|Qty|Cost ($USD)|Notes|
+|Item|Manufacturer|Product Number|Qty|Cost ($USD)|Notes and Purpose|
 |--|--|--|--|--|--|
 |CNC Machine|Genmitsu|[3018-PROVer V2](https://www.amazon.com/Genmitsu-3018-PROVer-Beginner-Emergency-Stop-Spoilboard/dp/B0CMTJ6CZC/ref=sr_1_1_sspa?crid=114QL76VIJQT2&dib=eyJ2IjoiMSJ9.si54z4Io1GeuV5q_lf4cUYZaZCHezjGgIqHPUU6P0igZW3XxzJmYpZL9AtNIYYhJccTElgCcUhtUQdVV5ba8m4LS1GSoMPPCwf3UhyZvH4ZiUVoozKL17vWyOP9NJd20GuYpfVtuVC89muO9eLsUb9GWtYLfNeeW22jnDYMXf6Wj7DleAou0EVavEHKg_6sW3kLy3ayNA2Ds_glnvx3UoRy4-qHn3XDycz0rp29txVuko8hxuk06H_KGxhoJuUdYbvN3ssnQmkJF5SzANHrhnlooRnQT6lFYgSyDRnvIUy8.md_gFbjykxNHiYnS4wvrPfHJinOVtTMHGsAoOf21tVY&dib_tag=se&keywords=genmitsu+3018+pro&qid=1765214407&sprefix=%2Caps%2C61&sr=8-1-spons&sp_csd=d2lkZ2V0TmFtZT1zcF9hdGY&psc=1)|1|270|Gantry system|
 |Backlight|HSK|[A4 Artist tracing Light Box](https://www.amazon.com/A4-Improved-Structure-Storage-Warranty/dp/B0755C2CBF/ref=sr_1_4_sspa?crid=HGMW73TTRQPR&dib=eyJ2IjoiMSJ9.4_N0Ik2-dp33AqZZQUH6lPCSK-indHZUztzxuA_r5m_N6FRgQakr2q2xWczA877ma-Kn3Wg1YssFvzX84_W71JBoGDrN-t-5l_fsytKcybtXcK0HeyLXEXp_SuL3Htm51K4VryE6UoOmJL38-CZoYn_D8gwmrOynzbvfrmPzWD8jF6ix13Yp7R2c_YWNEXzYW7PVZbbpmDKgD99cERhaPxwE0AcsIdEN1bAno8V0K94bn6aerwMUDKuRpkXaxoCaNUVZQ9D3wBQpVmUUeIcgyqLJ7cCkaRW__667lzrvsLQ.3viHBebDTzdf3RWMV6b_BhIbzKl7_wF7b8SZPi4-uwI&dib_tag=se&keywords=a4%2Bled%2Bpanel&qid=1765299952&sprefix=a4%2Bled%2Bpanel%2Caps%2C148&sr=8-4-spons&sp_csd=d2lkZ2V0TmFtZT1zcF9hdGY&th=1)|1|25.00|Enhances color visibility|
@@ -25,7 +25,7 @@ All materials required to build this dispenser are listed below:
 |Actuator|Actuonix|[P8-25-165-12-P](https://www.robotshop.com/products/actuonix-p8-p-micro-linear-actuator-25mm-1651-12-volts)|1|101|Movement of syringe plunger|
 |1 mL Glass Syringe|Bitomic|[1ML Borosilicate Glass Syringe with Silver Metal Plunger](https://www.amazon.com/Bitomic-Borosilicate-Anti-Leak-Accurate-Measuring/dp/B0B12N5FX1/ref=sr_1_4?crid=27Z7T6R5TKLKY&dib=eyJ2IjoiMSJ9.Yw4kuoOLBHtQtgRgCWrg_UyrphPhIigHygfRI9gIOsOOxc5vZB-vT6Ud9MmBn5jASPJFDirAoTOCDC5BUK4XhJrzwQ0H2fK1CxhK8O50jTiz1UXBEKUiPXQHhhY0z7NGUJ_H0zS58w3F-HV7qmqQ1KvSXZVnOcc-H95d0KyJQKOkdQ1ql96qCZtY4TWm8Ug5pwZGvPdHG9RO7FutGuSDnvlcll1teu8786hucaDxSbc.PAqqr5PJKCy80cdOngdv4AXuUCcV1T5XpCM-I6ynCME&dib_tag=se&keywords=1ml%2Bsyringe%2Bwith%2Bmetal%2Bplunger&qid=1761926550&sprefix=1ml%2Bsyringe%2Bwith%2Bmetal%2Bplunge%2Cspecialty-aps%2C86&sr=8-4-catcorr&srs=58792496011&th=1)|1|23.04|Comes in pack of 10 syringes|
 |Microcontroller|Arduino|[UNO R3](https://www.robotshop.com/products/arduino-uno-r3-usb-microcontroller)|1|30.08|Communication between computer and actuator|
-|Motor Board|Arduino|[A000079](https://www.digikey.ca/en/products/detail/arduino/A000079/2784007)|1|28.4|Powers actuator|
+|Motor Board|Arduino|[A000079](https://www.digikey.ca/en/products/detail/arduino/A000079/2784007)|1|28.4|Controls and powers actuator|
 |12V Barrel Power Supply + Barrel Connector|ALITOVE|[12V DC Power Supply 2A](https://www.amazon.com/gp/aw/d/B07VQHCK6P/?th=1)|1|7.99|Microcontroller power supply|
 |USB-C to USB-A Cable|DIYables|[DIY-USB-CABLE-UNO-R4](https://www.amazon.com/DIYables-Type-C-Cable-Arduino-Pieces/dp/B0CF575PW9/ref=sr_1_1?crid=1X5JRSBU5KXI3&dib=eyJ2IjoiMSJ9.xfdV7_O83Egk5hCZtzdxFgvndZUEhJk2wiER55T8da2XrHO9LYmdahZkSdnYATubZMWKmsgqLrut1veHztMaO_1m7VoN_dx0ihnui67jTtyK3FgLw7Rz-Eh6wyMHjEgAXv9i7K60oH5XuqyL5G4an2eJMNlM_DeC17x3jCVAVnJnZ6uyetzHWv7cU3cMDAj1BpTPr50KwHaxN_6sWH7-4z1DrrqwTndSrpDfoMHmvNGEaNXyxMRSGvqrmhN91ottXIMU9-Rr-A8sSM3ULrgUv6hOPjk3B-u5Lc4FVsLsT54.fcm_5GPGOIdKn36kKO_IwGwRgbkg4UXyGuoXdwWb4EE&dib_tag=se&keywords=USB%2BType-C%2BCable%2Bfor%2BArduino%2BUno%2BR4&qid=1765574974&s=electronics&sprefix=usb%2Btype-c%2Bcable%2Bfor%2Barduino%2Buno%2Br4%2Celectronics%2C101&sr=1-1&th=1)|1|7.99|For connection to microcontroller, comes in pack of 2|
 |3D-printed tool head and deck ware|n/a|n/a|1|5|Printed in PLA and PETG|
@@ -35,16 +35,16 @@ All materials required to build this dispenser are listed below:
 ### Generic Materials and Tools needed
 - Wires
 - Screws (4 * M6-20mm, 1 * M3-25mm)
-- Nut (M3)
-- 1*Metal rod (2mm diameter, at least 80mm in length)
+-	Nut (M3)
+- Metal rod (2mm diameter, at least 80mm in length)
 - Pliers
 - Allen keys
 - Super glue
-- access to 3D printer, with PLA, PETG and 95A TPU filament
+- Access to a 3D printer, with PLA, PETG and 95A TPU filament
 
 
 ## Step 2: 3D-print Required Parts
-Please print the following .STL files in the filament and with the supports specified in the Notes section. The editable Fusion 360 files for all these parts are provided in the `fusion files` folder, so this tool can be adapted to other types of labware, syringes, actuators or gantry systems.
+Please print the following .STL files with the filament and supports/settings listed. The editable Fusion 360 files for all these parts are provided in the `fusion files` folder, so this tool can be adapted to other types of labware, syringes, actuators or gantry systems.
 
 |File|Purpose|Filament|Print instructions|
 |--|--|--|--|
@@ -65,15 +65,15 @@ _Parts and materials required:_
 -	Wires (red and black) + solder/jumper wires
 -	Small screw for tightening connector terminals
 -	Connector terminal with barrel opening
--	metal rod with 2mm diameter
+-	A metal rod with 2mm diameter
 
 1. If using the optional electronics box, place the UNO R4 microcontroller at the bottom of the box, with the USB port aligned with the rectangular slot at the side of the box
 2. Mount the motor shield above the microcontroller and ensure they are attached securely
-3. To connect the power supply, insert a red wire into the positive (+) terminal and a black wire into the negative (-) terminal of the barrel connector. Tighten the screws and gently tug to confirm the wires are secured. Then, connect the red wire to the VIN pin and the black wire to the GND pins on the motor shield. <br>
+3. To connect the power supply, insert a red wire into the positive (+) terminal and a black wire into the negative (-) terminal of the barrel connector. Tighten the screws and gently tug the wires to confirm they are secured. Then, connect the other end of the red wire to the VIN pin and the other end of the black wire to the GND pin on the motor shield. <br>
 <img width="450" alt="19" src="https://github.com/user-attachments/assets/ce17f643-c322-48c5-9257-334810c5d040" />
 
    
-4. Wire the actuator: connect the red (positive) wire to the A+ pin and the black (negative) wire to A- on the motor shield. Use wire connectors or solder extensions if needed to provide enough slack for movement of the actuator in the CNC gantry.
+4. Wire the actuator: connect the red (positive) wire from the actuator to the A+ pin and the black (negative) wire from the actuator to A- on the motor shield. Use wire connectors or solder extensions if needed to ensure the wires are long enough for movement of the actuator in the CNC gantry.
 5. Plug the 12V power supply into the barrel connector.
 6. Connect the microcontroller to your computer using the USB-C / USB-A cable. There should be a green light in the microcontroller when connected.
 
