@@ -97,8 +97,10 @@ Tools and Materials needed:
 -	3D-Printed pieces: TPU padding, tool head and actuator_syringe_connector
 -	Super-glue
 
-1.	Place the actuator into the top of the tool head, with the actuator shaft aligned with the square hole in the holder. After it is inserted, check if the holes in the shaft are aligned with larger holes at the side of the holder. If not, use `act_ext.py` to move the actuator up or down using the retract() and extend() methods respectively.
-   <img width="200" alt="2" src="https://github.com/user-attachments/assets/45d75311-2296-47b7-8b75-9df62e44e4a6" />
+1. Place the actuator into the top of the tool head, with the actuator shaft aligned with the square opening in the holder. After the actuator is inserted fully, thread the metal rod through the holder and top of the actuator. Then, check if the holes in the shaft are aligned with larger holes at the side of the holder. If not, use `act_ext.py` to move the actuator up or down using the retract() and extend() methods respectively.
+<img width="200" alt="actuator_holder" src="https://github.com/user-attachments/assets/6c44098a-dcba-4b21-a73d-e4c30eb28a8d" />
+
+   
 
 2.	Glue the TPU padding to the bottom of the syringe plunger. After it dries, insert the plunger into the syringe.
 <img width="150" alt="3" src="https://github.com/user-attachments/assets/ffe0deb3-437f-4ebb-83b3-0956bda05e91" />
@@ -110,7 +112,7 @@ Tools and Materials needed:
 4.	Place the syringe inside the tool holder (shown in blue).
 <img width="200" alt="8" src="https://github.com/user-attachments/assets/a39cc3ee-fd90-4d6f-8f80-d4c03b8e7e88" />
  
-5.	Align the square at the top of the orange connector piece with the actuator shaft, then slowly push the plunger upwards until the holes in the connector are line up with holes in the actuator shaft.
+5.	Align the square at the top of the orange connector piece with the actuator shaft, then slowly push the plunger upwards until the holes in the connector are line up with holes in the actuator shaft. NOTE: check that the metal rod is still threaded in the top of the holder or else the actuator will be pushed up during this step.
 <img width="350" alt="9" src="https://github.com/user-attachments/assets/9f59a5c9-05da-4742-b3d4-ba3f349f55b8" />
 
 6.	Insert the screw through the aligned holes and tighten the nut to secure the actuator to the plunger. 
@@ -126,10 +128,13 @@ The following is how it should look when this step is complete: <br>
 9.	Twist off the syringe cap and attach a new syringe needle by twisting it on.
 <img width="150" alt="18" src="https://github.com/user-attachments/assets/f215024a-4181-449b-8d88-3eed3cb20f3f" />
 
-11.	Thread the metal rod through the holes at the top of the holder and the actuator
+10.	Place the camera into the slot in the front of the dispenser. If the hole was warped during the printing, use a heat gun to soften the print, insert the camera, and let it cool.
+<img width="150" alt="20" src="https://github.com/user-attachments/assets/e6a4ed9a-346e-4942-91be-e60b2ccbfe04" />
 
 ## Step 7: Deck set-up and mount labware 
-1.	Place the backlight on the CNC deck.
+1.	Place the backlight on the CNC deck. See below for a picture of the set-up.
+<img width="300" src="https://github.com/user-attachments/assets/04af57f4-eefc-421a-95e9-aa5e76d84fe2" />
+
 2.	Using an Allen key, use 2 M6 screws to attach the left and right backlight clamps to the CNC deck. Position them near the recommended locations, as placing screws close to the edges of the X and Y axes may risk damaging the system when the gantry moves.
 3.	If you are using the given labware set-up, place the well plate in the slot that is higher, and place a liquid reservoir inside the 3D printed reservoir spacer and into the other slot. If using other labware, feel free to adapt the deck ware holder and location coordinates in `code/location_status.yaml`.
 
@@ -137,7 +142,7 @@ _🎉Congratulations you have finished setting up the hardware for the ultra-bud
 
 ## ⚠️IMPORTANT NOTES: Things to watch out for when starting workflows
 1. Ensure the metal rod at the top of the holder is in place; it keeps the actuator secured when moving
-   <img width="300" alt="15" src="https://github.com/user-attachments/assets/c6f6f787-888d-412f-9ce0-08c39c77cc94" />
+   <img width="300" alt="15" src="https://github.com/user-attachments/assets/c6f6f787-888d-412f-9ce0-08c39c77cc94" /> <br>
 
 2. Ensure the camera is securely placed in the front of the tool head
    - Test its positionings using `cnc_camera_test.py` to make sure you don’t pick up the edges of the wells
