@@ -37,6 +37,8 @@ import datetime
 import cv2
 from typing import Dict, List, Tuple, Any
 
+RANDOM_VARIABLE = None
+
 # Workflow configuration
 NUM_WELLS = 24  # Total wells to measure
 WELLS_PER_GROUP = 6  # Number of identical wells per group
