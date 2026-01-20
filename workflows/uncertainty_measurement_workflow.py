@@ -26,7 +26,7 @@ Modes:
 - MANUAL_MODE = True: Only imaging, no pipetting (for manually prepared wells)
 - MANUAL_MODE = False: Full pipetting + imaging workflow (to be implemented)
 """
-
+#test
 from base_workflow import Liquid_Dispenser, start_workflow_logging
 import pandas as pd
 import numpy as np
