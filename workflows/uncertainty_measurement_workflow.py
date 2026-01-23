@@ -47,7 +47,7 @@ COLOR_SPACES = ['RGB', 'LAB', 'HSV']  # Color spaces to analyze
 
 # Operation mode
 MANUAL_MODE = False  # True: Only imaging, False: Pipetting + imaging
-VIRTUAL = True  # For testing without hardware
+VIRTUAL = False  # For testing without hardware
 SAVE_DATA = True  # Save data even in virtual mode
 
 # Reservoir mapping (for future pipetting mode)

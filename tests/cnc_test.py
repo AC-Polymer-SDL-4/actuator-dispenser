@@ -1,5 +1,6 @@
 import time
 from base_workflow import CNC_Machine
+import time
 
 cnc = CNC_Machine(com = "COM5", z_low_bound=-70)
 
@@ -15,5 +16,34 @@ cnc = CNC_Machine(com = "COM5", z_low_bound=-70)
 #     cnc.move_to_location(location_name='well_plate', i, safe = False) #move to each well plate spot, safe = False to skip safe height
 
 #option 3: Home CNC machine
-cnc.home()
-cnc.close()
+# try:
+# 	cnc.home()
+
+# 	# Safe, small motion test near origin
+# 	# 1) Ensure we're at safe Z
+# 	cnc.move_to_point(z=0)
+
+# 	# 2) Move a small distance in XY at safe Z
+# 	cnc.move_to_point_safe(x=10, y=10, z=0, speed=1500)
+
+# 	# 3) Dip slightly down in Z within bounds (e.g., -2 mm), then back up
+# 	cnc.move_to_point(z=-2, speed=800)
+# 	cnc.move_to_point(z=0, speed=800)
+
+# 	# 4) Return to origin
+# 	cnc.move_to_point_safe(x=0, y=0, z=0, speed=1500)
+# finally:
+# 	cnc.close()
+
+# Added: Home and visit all 24 well plate positions safely, then return to origin
+try:
+	cnc.home()
+
+	for i in range(24):
+		print(f"Visiting well {i}")
+		cnc.move_to_location(location_name='well_plate', location_index=i, safe=True, speed=1500)
+		time.sleep(0.3)
+
+	cnc.move_to_point_safe(x=0, y=0, z=0, speed=1500)
+finally:
+	cnc.close()
