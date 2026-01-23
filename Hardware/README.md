@@ -30,7 +30,7 @@ All materials required to build this dispenser are listed below:
 |USB-C to USB-A Cable|DIYables|[DIY-USB-CABLE-UNO-R4](https://www.amazon.com/DIYables-Type-C-Cable-Arduino-Pieces/dp/B0CF575PW9/ref=sr_1_1?crid=1X5JRSBU5KXI3&dib=eyJ2IjoiMSJ9.xfdV7_O83Egk5hCZtzdxFgvndZUEhJk2wiER55T8da2XrHO9LYmdahZkSdnYATubZMWKmsgqLrut1veHztMaO_1m7VoN_dx0ihnui67jTtyK3FgLw7Rz-Eh6wyMHjEgAXv9i7K60oH5XuqyL5G4an2eJMNlM_DeC17x3jCVAVnJnZ6uyetzHWv7cU3cMDAj1BpTPr50KwHaxN_6sWH7-4z1DrrqwTndSrpDfoMHmvNGEaNXyxMRSGvqrmhN91ottXIMU9-Rr-A8sSM3ULrgUv6hOPjk3B-u5Lc4FVsLsT54.fcm_5GPGOIdKn36kKO_IwGwRgbkg4UXyGuoXdwWb4EE&dib_tag=se&keywords=USB%2BType-C%2BCable%2Bfor%2BArduino%2BUno%2BR4&qid=1765574974&s=electronics&sprefix=usb%2Btype-c%2Bcable%2Bfor%2Barduino%2Buno%2Br4%2Celectronics%2C101&sr=1-1&th=1)|1|7.99|For connection to microcontroller, comes in pack of 2|
 |3D-printed tool head and deck ware|n/a|n/a|1|5|Printed in PLA and PETG|
 |3D-printed electronics box|n/a|n/a|1|2.18|optional|
-|Total Cost||||**approximately 500**||
+|Total Cost||||**514**||
 
 ### Generic Materials and Tools needed
 - Wires
@@ -85,7 +85,7 @@ _Parts and materials required:_
 4.	Install the packages listed in `code/requirements.txt`.
 5.	Edit the COM PORT numbers in the code when initializing the dispenser or individual components to run tests and workflows.
 	  -  For example: `dispenser = Liquid_Dispenser(cnc_comport="COM4", camera_index=0, acutuator_comport=”COM3”)` or `cnc = CNC_Machine(com = "COM4") `
-7.	Run `tests/act_ext.py` to check that the actuator is connected and working. This should retract and extend the plunger by ~0.5cm. If troubleshooting is needed, refer to `code/README.md`.
+7.	Run `tests/actuator_test.py` to check that the actuator is connected and working. This should retract and extend the plunger by ~0.5cm. If troubleshooting is needed, refer to `code/README.md`.
 
 Additional details on the code design and functionality can be found in `code/README.md`.
 
@@ -97,7 +97,7 @@ Tools and Materials needed:
 -	3D-Printed pieces: TPU padding, tool head and actuator_syringe_connector
 -	Super-glue
 
-1. Place the actuator into the top of the tool head, with the actuator shaft aligned with the square opening in the holder. After the actuator is inserted fully, thread the metal rod through the holder and top of the actuator. Then, check if the holes in the shaft are aligned with larger holes at the side of the holder. If not, use `act_ext.py` to move the actuator up or down using the retract() and extend() methods respectively.
+1. Place the actuator into the top of the tool head, with the actuator shaft aligned with the square opening in the holder. After the actuator is inserted fully, thread the metal rod through the holder and top of the actuator. Then, check if the holes in the shaft are aligned with larger holes at the side of the holder. If not, use `actuator_test.py` to move the actuator up or down using the retract() and extend() methods respectively.
 <img width="200" alt="actuator_holder" src="https://github.com/user-attachments/assets/6c44098a-dcba-4b21-a73d-e4c30eb28a8d" />
 
    
@@ -105,14 +105,14 @@ Tools and Materials needed:
 2.	Glue the TPU padding to the bottom of the syringe plunger. After it dries, insert the plunger into the syringe.
 <img width="150" alt="3" src="https://github.com/user-attachments/assets/ffe0deb3-437f-4ebb-83b3-0956bda05e91" />
 
-3.	Attach the actuator syringe connector (shown in orange) to the top of the syringe plunger.
+3.	Attach the actuator syringe connector (shown in orange) to the top of the syringe plunger. The square at the top of the connector will be aligned with the actuator shaft in step 5.
 <img width="150" alt="5" src="https://github.com/user-attachments/assets/d5d2c002-d74b-4678-87c7-10935f2a6e2c" />
 <img width="300" alt="7" src="https://github.com/user-attachments/assets/5deb88d0-9c7c-41b5-81f2-d99f5ccbc72b" />
 
 4.	Place the syringe inside the tool holder (shown in blue).
 <img width="200" alt="8" src="https://github.com/user-attachments/assets/a39cc3ee-fd90-4d6f-8f80-d4c03b8e7e88" />
  
-5.	Align the square at the top of the orange connector piece with the actuator shaft, then slowly push the plunger upwards until the holes in the connector are line up with holes in the actuator shaft. NOTE: check that the metal rod is still threaded in the top of the holder or else the actuator will be pushed up during this step.
+5.	Align the square at the top of the orange connector piece with the actuator shaft (see image in step 3), then slowly push the plunger upwards until the holes in the connector are aligned with the holes in the actuator shaft. NOTE: check that the metal rod is still threaded in the top of the holder or else the actuator will be pushed up during this step.
 <img width="350" alt="9" src="https://github.com/user-attachments/assets/9f59a5c9-05da-4742-b3d4-ba3f349f55b8" />
 
 6.	Insert the screw through the aligned holes and tighten the nut to secure the actuator to the plunger. 
@@ -124,7 +124,7 @@ The following is how it should look when this step is complete: <br>
 7.	Add the holder cap and insert the holder into the CNC tool holder. The circular part of the tool head should sit slightly below the top of CNC tool holder.
 <img width="200" alt="13" src="https://github.com/user-attachments/assets/f665dd76-7e55-4774-9b43-5f2e1d568981" />
 
-8.	Extend the plunger using `act_ext.py` until the plunger is at the very bottom of the syringe. It is recommended to use intervals of 0.3 second extensions.
+8.	Extend the plunger using `actuator_test.py` until the plunger is at the very bottom of the syringe. It is recommended to use intervals of 0.3 second extensions.
 9.	Twist off the syringe cap and attach a new syringe needle by twisting it on.
 <img width="150" alt="18" src="https://github.com/user-attachments/assets/f215024a-4181-449b-8d88-3eed3cb20f3f" />
 
@@ -150,7 +150,7 @@ _🎉Congratulations you have finished setting up the hardware for the ultra-bud
    - <img width="150" alt="20" src="https://github.com/user-attachments/assets/e6a4ed9a-346e-4942-91be-e60b2ccbfe04" />
      
 3.	Ensure the actuator is fully extended & plunger is at the bottom of the syringe. Since the position of the syringe is not tracked, pulling it too far up can break the dispenser.
-     - If not, use `code\test\act_ext.py` to move the plunger
+     - If not, use `code\test\actuator_test.py` to move the plunger
 
 4.	It is recommended to **re-calibrate** the dispenser every 3 full 24-wellplates of experiments (**~1200** liquid transfers) and switch to a **new syringe** every 6 well plates of experiments (**~2000** liquid transfers).
      - For calibrations, run `volume_calibration.py` to calibrate the system for accurate liquid transfer
@@ -163,7 +163,7 @@ _Tools and Materials needed:_
 -	New syringe needle (optional)
 
 1.	Remove tool head from the CNC holder and remove the cap.
-2.	Move the syringe up so the screw and nut are aligned with the holes at the side of the holder using `act.retract()` or `act.extend()` in `act_ext.py`. It is recommended to use time intervals of 0.3 seconds. 
+2.	Move the syringe up so the screw and nut are aligned with the holes at the side of the holder using `act.retract()` or `act.extend()` in `actuator_test.py`. It is recommended to use time intervals of 0.3 seconds. 
 3.	Hold the screw in place using an Allen key and use pliers to unfasten the nut. Then, remove the screw.
     <img width="300" alt="17" src="https://github.com/user-attachments/assets/398d2f14-bc01-421c-9f2b-4adf513e4096" />
 
