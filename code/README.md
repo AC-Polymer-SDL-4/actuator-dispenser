@@ -25,9 +25,8 @@ Some example workflows included are:
 1.	`color_matching_workflow.py`: A self-driving workflow using Bayesian Optimization (BO) to match an unknown target color from red, blue and yellow solutions using visual feedback.
     - This workflow contains all the code for the physical actions and calls from `color_matching_optimizer.py` for BO tasks like initializing the BayBE campaign and getting new suggestions.
     - The data and images collected are in `data\color_matching`
-    - Deck set-up: a reservoir with color solutions and water for rinsing the syringe and a 24-wellplate with 1mL of the unknown target color (a combination of the color solutions) in the top-left well in the wellplate.
-      
-**[Add IMAGE]**
+    - Deck set-up: a reservoir with color solutions and water for rinsing the syringe and a 24-wellplate with 1mL of the unknown target color (a combination of the color solutions) in the top-left well in the wellplate. See image below.
+    - <img width="500"  src="https://github.com/user-attachments/assets/a8d3adfc-8966-4548-8bbe-511999f21f17" />
 
 ## Troubleshooting connection issues
 1.	Make sure all components are plugged in (microcontroller, CNC machine (with the power switch on), optionally the backlight) and connected to the computer via USB (microcontroller, camera, CNC machine)
