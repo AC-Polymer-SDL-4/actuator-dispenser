@@ -35,7 +35,7 @@ Some example workflows included are:
 		- If there are permission_denied errors: make sure Candle is NOT open, and double check the comport number in device manager
 	- Edit the `camera_index` value (usually 0 or 1) and run `Camera_test.py`, this should capture an image and save it to the designated output folder.
  		- If there are initialization errors: change the camera_index, and check that you can access the camera using a camera app on your computer
-	- Edit the `com_port` value in `act_ext.py` and run, this should retract and extend the actuator by ~0.5cm. There is also a sound when the actuator is moving.
+	- Edit the `com_port` value in `actuator_test.py` and run, this should retract and extend the actuator by ~0.5cm. There is also a sound when the actuator is moving.
 		- If the actuator doesn’t move:
 			- check the microcontroller to see if it is connected to your computer (green light) 
 			- run the test again and check if there are orange lights at the A+ and A- pins on the motor board when sending each of the commands
