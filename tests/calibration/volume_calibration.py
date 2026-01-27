@@ -20,6 +20,7 @@ from constants import (
     SLOPE_SECONDS_PER_ML,
     RETRACT_MIN_TIME_S,
     RETRACT_MAX_TIME_S,
+    BLOWOUT_VOL_ML,
 )
 
 SIMULATE = False
@@ -40,10 +41,16 @@ def _append_measurement(row: dict):
     header = not os.path.exists(CSV_PATH)
     df.to_csv(CSV_PATH, mode="a", header=header, index=False)
 
-def dispense_by_time(dispenser, source_location, source_index, retract_time, dest_location, dest_index, air_time=0.7, buffer_time=0.35, speed=32768):
-    # Enforce retract time bounds
-    if retract_time < RETRACT_MIN_TIME_S or retract_time > RETRACT_MAX_TIME_S:
-        raise ValueError(f"Retract time {retract_time:.3f}s out of bounds [{RETRACT_MIN_TIME_S:.3f}, {RETRACT_MAX_TIME_S:.3f}]s")
+def dispense_by_time(dispenser, source_location, source_index, retract_time, dest_location, dest_index, air_time=0.7, buffer_time=0.25, speed=32768):
+    # Enforce retract time bounds with small tolerance to avoid FP edge issues
+    EPS = 1e-3  # 1 ms tolerance
+    if retract_time < (RETRACT_MIN_TIME_S - EPS):
+        raise ValueError(f"Retract time {retract_time:.3f}s below minimum {RETRACT_MIN_TIME_S:.3f}s")
+    if retract_time > (RETRACT_MAX_TIME_S + EPS):
+        raise ValueError(f"Retract time {retract_time:.3f}s above maximum {RETRACT_MAX_TIME_S:.3f}s")
+    if retract_time > RETRACT_MAX_TIME_S:
+        dispenser.logger.info("Clamping retract_time from %.3fs to max %.3fs due to tolerance", retract_time, RETRACT_MAX_TIME_S)
+        retract_time = RETRACT_MAX_TIME_S
     dispenser.cnc_machine.move_to_location(source_location, source_index, safe=True)
 
     dispenser.logger.debug("Aspirating air buffer: %.2f seconds", air_time)
@@ -104,7 +111,7 @@ TIMES = _parse_float_list(args.times)
 VOLUMES = _parse_float_list(args.volumes)
 
 BUFFER = args.buffer  # extra time to push out in seconds (used in both time and volume-based calibration)
-BLOWOUT_VOL = 0.28  # default (only used in volume-based calibration)
+BLOWOUT_VOL = BLOWOUT_VOL_ML  # default (only used in volume-based calibration)
 AIR_TIME = args.air  # default air buffer time (only used in time-based calibration)
 SPEED = args.speed  # 32768 default, 65000 maximum speed
 
@@ -114,50 +121,50 @@ MAX_WELLS = 24  # max number of wells to use for calibration (24 for 24-well pla
 
 if CALIBRATION_TYPE == 'time':
     # Dispensing by time calibration using grouped wells per time
-    total_required_wells = len(TIMES) * NUM_REPLICATES
-    if total_required_wells <= MAX_WELLS:
-        for time_idx, t in enumerate(TIMES):
-            base_well = time_idx * NUM_REPLICATES
-            for rep in range(NUM_REPLICATES):
-                dest_well = base_well + rep
-                meta = dispense_by_time(
-                    dispenser,
-                    source_location="reservoir_12",
-                    source_index=11,
-                    retract_time=t,
-                    dest_location="well_plate",
-                    dest_index=dest_well,
-                    speed=SPEED,
-                    buffer_time=BUFFER,
-                    air_time=AIR_TIME,
-                )
-                # Prompt for measured mass increase (grams) to compute volume (mL)
-                measured_mass = input(
-                    f"t={t:.3f}s → well {dest_well} (rep {rep + 1}/{NUM_REPLICATES}). Enter measured mass in grams (4 dp): "
-                ).strip()
-                measured_volume_ml = None
-                if measured_mass:
-                    try:
-                        mass_g = float(Decimal(measured_mass).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP))
-                        measured_volume_ml = float(Decimal(mass_g).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP))
-                    except ValueError:
-                        print("Invalid mass input; skipping volume logging.")
-                _append_measurement({
-                    "calibration_type": "time",
-                    "time_index": time_idx,
-                    "replicate": rep + 1,
-                    "well_index": dest_well,
-                    "target_time_s": t,
-                    "target_volume_ml": None,
-                    "measured_volume_ml": measured_volume_ml,
-                    "measured_mass_g": measured_volume_ml if measured_volume_ml is not None else None,
-                    "air_time_s": meta["air_time_s"],
-                    "buffer_time_s": meta["buffer_time_s"],
-                    "speed": meta["speed"],
-                    "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-                })
-    else:
-        print(f"Not enough wells: need {total_required_wells}, have {MAX_WELLS}")
+    # Map times to wells in blocks of 4; reset every 24 wells (modulo mapping)
+    groups_per_plate = MAX_WELLS // NUM_REPLICATES  # e.g., 24-well plate with 4 reps -> 6 groups
+    for time_idx, t in enumerate(TIMES):
+        base_well = (time_idx % groups_per_plate) * NUM_REPLICATES
+        plate_index = time_idx // groups_per_plate
+        for rep in range(NUM_REPLICATES):
+            dest_well = base_well + rep
+            meta = dispense_by_time(
+                dispenser,
+                source_location="reservoir_12",
+                source_index=11,
+                retract_time=t,
+                dest_location="well_plate",
+                dest_index=dest_well,
+                speed=SPEED,
+                buffer_time=BUFFER,
+                air_time=AIR_TIME,
+            )
+            # Prompt for measured mass increase (grams) to compute volume (mL)
+            measured_mass = input(
+                f"t={t:.3f}s → well {dest_well} (rep {rep + 1}/{NUM_REPLICATES}). Enter measured mass in grams (4 dp): "
+            ).strip()
+            measured_volume_ml = None
+            if measured_mass:
+                try:
+                    mass_g = float(Decimal(measured_mass).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP))
+                    measured_volume_ml = float(Decimal(mass_g).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP))
+                except ValueError:
+                    print("Invalid mass input; skipping volume logging.")
+            _append_measurement({
+                "calibration_type": "time",
+                "time_index": time_idx,
+                "plate_index": plate_index,
+                "replicate": rep + 1,
+                "well_index": dest_well,
+                "target_time_s": t,
+                "target_volume_ml": None,
+                "measured_volume_ml": measured_volume_ml,
+                "measured_mass_g": measured_volume_ml if measured_volume_ml is not None else None,
+                "air_time_s": meta["air_time_s"],
+                "buffer_time_s": meta["buffer_time_s"],
+                "speed": meta["speed"],
+                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+            })
 
 elif CALIBRATION_TYPE == 'volume':
     # Dispense by volume calibration

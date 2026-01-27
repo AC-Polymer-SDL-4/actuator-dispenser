@@ -36,9 +36,21 @@ def fit_linear(df_time: pd.DataFrame):
     return k, b, r2, m_pred, seconds_per_gram
 
 
-def plot_time_vs_net_mass(df_time, k, b, out_dir):
+def plot_time_vs_net_mass(df_time, k, b, r2, out_dir):
     plt.figure(figsize=(7, 5))
-    plt.scatter(df_time["target_time_s"], df_time["dispensed_mass_g"], alpha=0.8, label="Net mass per dispense")
+    # Raw replicates
+    plt.scatter(df_time["target_time_s"], df_time["dispensed_mass_g"], alpha=0.5, label="Replicates")
+
+    # Per-time uncertainty (±1 SD across replicates)
+    g = df_time.copy()
+    g["time_label"] = g["target_time_s"].round(3)
+    grouped = g.groupby("time_label")
+    t_centers = grouped["target_time_s"].mean().values
+    means = grouped["dispensed_mass_g"].mean().values
+    stds = grouped["dispensed_mass_g"].std(ddof=1).fillna(0).values
+    if len(t_centers) > 0:
+        plt.errorbar(t_centers, means, yerr=stds, fmt="o", color="tab:blue", ecolor="tab:blue",
+                     elinewidth=1, capsize=3, label="Mean ± 1 SD")
     t_line = np.linspace(df_time["target_time_s"].min(), df_time["target_time_s"].max(), 100)
     plt.plot(t_line, k * t_line + b, color="orange", label="Linear fit")
     plt.xlabel("Time (s)")
@@ -46,6 +58,11 @@ def plot_time_vs_net_mass(df_time, k, b, out_dir):
     plt.title("Time → Net Mass Calibration")
     plt.legend()
     plt.grid(True, alpha=0.3)
+    # Annotate fit equation and R^2 on the plot
+    ax = plt.gca()
+    text = f"y = {k:.4f}x + {b:.4f}\nR^2 = {r2:.4f}"
+    ax.text(0.05, 0.95, text, transform=ax.transAxes, va="top", ha="left",
+            bbox=dict(facecolor="white", edgecolor="gray", alpha=0.8, boxstyle="round,pad=0.3"), fontsize=9)
     plt.tight_layout()
     path = os.path.join(out_dir, "time_to_net_mass_fit.png")
     plt.savefig(path, dpi=150)
@@ -80,7 +97,7 @@ def main():
         f.write(f"N = {len(df_time)} rows\n")
     print(f"Saved fit summary -> {summary_path}")
 
-    p1 = plot_time_vs_net_mass(df_time, k, b, out_dir)
+    p1 = plot_time_vs_net_mass(df_time, k, b, r2, out_dir)
     print("Saved plot:")
     print(" -", p1)
 

@@ -6,8 +6,9 @@ SLOPE_SECONDS_PER_ML = 0.4061 # Time per mL (s/mL)
 
 # Actuator settings (kept constant during calibration)
 ACTUATOR_SPEED = 32768       # 0–65535
-BLOWOUT_VOL_ML = 0.28        # Air buffer volume (mL)
-BUFFER_TIME_S = 0.15         # Extra push-out time (s)
+# Set blowout so air time ≈ 0.70 s with current slope
+BLOWOUT_VOL_ML = 0.2843      # Air buffer volume (mL) → AIR_TIME_S ≈ 0.7000 s
+BUFFER_TIME_S = 0.25         # Extra push-out time (s)
 
 # Derived values
 AIR_TIME_S = BLOWOUT_VOL_ML / SLOPE_SECONDS_PER_ML
@@ -20,7 +21,11 @@ RETRACT_MIN_TIME_S = 0.0
 RETRACT_MAX_TIME_S = MAX_TIME_S - AIR_TIME_S  # Max liquid retract time so air+liquid stays within MAX_TIME
 
 # Recommended calibration set (retract times, seconds)
-CALIBRATION_TIMES_S = [0.05, 0.10, 0.12, 0.15, 0.18, 0.20]
+# Updated to 12 time stamps as requested
+CALIBRATION_TIMES_S = [
+	0.05, 0.16, 0.27, 0.38, 0.49, 0.60,
+	0.71, 0.82, 0.93, 1.04, 1.15, 1.25,
+]
 CALIBRATION_REPLICATES = 4
 
 # Derived expectations for the recommended times
