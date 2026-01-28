@@ -27,12 +27,13 @@ Workflow:
 """
 
 from base_workflow import Liquid_Dispenser, start_workflow_logging
+import argparse
 
 # Optimizer Selection - Change this to switch optimization methods
 # 'baybe' - Bayesian optimization (default, good exploration)
 # 'gradient' - Gradient descent (fast convergence, may find local minima)
 # 'convex' - Convex optimization (global optimum if problem is convex)
-OPTIMIZER_TYPE = 'convex'  # Options: 'baybe', 'gradient', 'convex'
+OPTIMIZER_TYPE = 'baybe'  # Options: 'baybe', 'gradient', 'convex'
 
 # Import the selected optimizer
 if OPTIMIZER_TYPE == 'baybe':
@@ -63,6 +64,8 @@ RANDOM_SEED = 31
 VIRTUAL = False #saves data by default when NOT virtual
 SAVE_DATA = True #option to save data when virtual
 WITHOUT_WATER = True
+SKIP_HOMING = False
+SHOW_CROP = False
 
 # Choose initialization method (applies to BayBE, others will use BayBE-compatible behavior)
 # 'sobol' - BayBE's default intelligent Sobol-like initialization (recommended)
@@ -76,8 +79,8 @@ COLOR_SPACE = COLOR_SPACE.upper() #just to make sure it's in uppercase
 # Reservoir mapping
 RESERVOIRS = {
     'R': 0,      # Red colorant
-    'B': 1,      # Yellow colorant  
-    'Y': 2,      # Blue colorant
+    'Y': 1,      # Yellow colorant  
+    'B': 2,      # Blue colorant
     'Water': 3,  # Water/diluent
     'wash': 4,   # Wash solution
     'condition_water_1': 5,   # Condition water
@@ -246,6 +249,8 @@ def condition_system(dispenser, logger):
 
 def main():
     """Main color matching workflow."""
+    # Use global configuration, possibly overridden by CLI args parsed in __main__
+    global VIRTUAL, SAVE_DATA, WITHOUT_WATER, SKIP_HOMING, OPTIMIZER_TYPE, COLOR_SPACE
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     log_filename = f"color_matching_workflow{virtual_tag}_{timestamp}.log"
 
@@ -260,14 +265,15 @@ def main():
     dispenser = Liquid_Dispenser(
         cnc_comport="COM5", 
         actuator_comport="COM3", #non-gaming computer
-        virtual=VIRTUAL,  # Set to False for real hardware
+        virtual=VIRTUAL,  # Set via flag; False for real hardware
         camera_index=0, #for non-gaming computer
         log_level=logging.INFO,
         output_dir=output_dir,
         log_filename = log_filename,
     )
     dispenser.cnc_machine.Z_LOW_BOUND = -70  # Adjust as needed
-    dispenser.cnc_machine.home() #Home machine
+    if not SKIP_HOMING:
+        dispenser.cnc_machine.home() #Home machine
 
     if not dispenser.virtual:
         import slack_agent
@@ -295,7 +301,7 @@ def main():
                 target_color = {'R': 180, 'G': 120, 'B': 80}  # Default to RGB
         else:
             # Real hardware mode - read actual target color from well 0
-            target_color = dispenser.get_image_color("well_plate_camera", TARGET_WELL, "target_sample", square_size=60, color_space=COLOR_SPACE, show_crop=True)
+            target_color = dispenser.get_image_color("well_plate_camera", TARGET_WELL, "target_sample", square_size=60, color_space=COLOR_SPACE, show_crop=SHOW_CROP)
 
         logger.info(f"Target {COLOR_SPACE} values: {get_color_str(target_color)}") #log the target color values
 
@@ -629,4 +635,27 @@ def main():
         slack_agent.send_slack_message("Color Matching Workflow finished on real hardware.", SLACK_CHANNEL)
 
 if __name__ == "__main__":
+    # Parse CLI arguments to override defaults without editing the file
+    parser = argparse.ArgumentParser(description="Color Matching Workflow")
+    parser.add_argument("--virtual", action="store_true", help="Run in virtual mode (no hardware movement)")
+    parser.add_argument("--skip-homing", action="store_true", help="Skip homing at start")
+    parser.add_argument("--optimizer-type", choices=["baybe","gradient","convex"], help="Select optimizer type")
+    parser.add_argument("--color-space", choices=["RGB","RGBA","HSV","LAB"], help="Select color space")
+    parser.add_argument("--without-water", action="store_true", help="Disable water component in mixtures")
+    parser.add_argument("--show-crop", action="store_true", help="Display the center crop window (blocks until closed)")
+    args = parser.parse_args()
+
+    if args.virtual:
+        VIRTUAL = True
+    if args.skip_homing:
+        SKIP_HOMING = True
+    if args.optimizer_type:
+        OPTIMIZER_TYPE = args.optimizer_type
+    if args.color_space:
+        COLOR_SPACE = args.color_space.upper()
+    if args.without_water:
+        WITHOUT_WATER = True
+    if args.show_crop:
+        SHOW_CROP = True
+
     main()

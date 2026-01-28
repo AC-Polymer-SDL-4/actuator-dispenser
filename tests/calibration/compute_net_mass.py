@@ -5,18 +5,24 @@ import pandas as pd
 from decimal import Decimal, ROUND_HALF_UP
 
 """
-Compute per-dispense net mass (and volume) from cumulative mass entries.
+Compute per-dispense net mass (and volume) from calibration CSV.
+
+Behavior:
+- Prefer direct per-row `dispensed_mass_g` if present.
+- Else, if both `baseline_mass_g` and `after_mass_g` exist, use their difference.
+- Else, compute diffs from cumulative `measured_mass_g` within each plate, honoring optional tare.
+
 Supports time-mode calibration with plate resets after N groups of times.
 
 Usage:
-  python tests/calibration/compute_net_mass.py --input <calibration_measurements.csv> \
-      --groups-per-plate 6 --tare 43.706 --out <optional_output_csv>
+    python tests/calibration/compute_net_mass.py --input <calibration_measurements.csv> \
+            --groups-per-plate 6 --tare 43.706 --out <optional_output_csv>
 
 Notes:
-- If --tare is omitted, the baseline per plate defaults to the first measured_mass_g in that plate.
+- If --tare is omitted, cumulative baseline per plate defaults to the first measured_mass_g in that plate.
 - If the CSV includes 'plate_index' (added by the runner), resets use it directly.
 - Otherwise, plate_index is inferred from time_index and --groups-per-plate.
-- Negative first entries (due to tare mismatch) are clamped to positive magnitude for that first row only.
+- Negative first cumulative diff (due to tare mismatch) is clamped to positive magnitude for that first row only.
 """
 
 def parse_args():
@@ -28,8 +34,8 @@ def parse_args():
     return ap.parse_args()
 
 
-def quant4(x: float) -> float:
-    return float(Decimal(str(x)).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP))
+def quant3(x: float) -> float:
+    return float(Decimal(str(x)).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP))
 
 
 def main():
@@ -38,11 +44,11 @@ def main():
     out_csv = args.out or os.path.splitext(in_csv)[0] + "_net.csv"
 
     df = pd.read_csv(in_csv)
-    # Only process time-mode rows with cumulative measured_mass_g present
-    mask = (df.get("calibration_type") == "time") & df.get("measured_mass_g").notna()
+    # Only process time-mode rows
+    mask = (df.get("calibration_type") == "time")
     df_time = df[mask].copy()
     if df_time.empty:
-        print("No time-mode rows with measured_mass_g found.")
+        print("No time-mode calibration rows found.")
         return 1
 
     # Ensure required columns exist
@@ -74,18 +80,34 @@ def main():
     # Sort deterministically within each plate
     df_time = df_time.sort_values(["plate_index", "well_index", "timestamp"], ascending=[True, True, True])
 
-    # Compute per-plate net differences
+    # Compute per-plate net differences, preferring direct dispensed fields when available
     dispensed = []
     for plate_idx, g in df_time.groupby("plate_index", sort=True):
         plate_tare = tare_map.get(plate_idx, args.tare)
-        prev_mass = plate_tare if plate_tare is not None else float(g["measured_mass_g"].iloc[0])
-        for j, m in enumerate(g["measured_mass_g"].tolist()):
-            diff = m - prev_mass
-            if j == 0 and diff < 0:
-                # Clamp first row to positive magnitude if tare slightly exceeds first reading
-                diff = abs(diff)
-            dispensed.append(quant4(diff))
-            prev_mass = m
+        prev_mass = None
+        # Initialize prev_mass only if we will use cumulative differences
+        if "measured_mass_g" in g.columns and g["measured_mass_g"].notna().any():
+            prev_mass = plate_tare if plate_tare is not None else float(g["measured_mass_g"].iloc[0])
+        for j, row in enumerate(g.itertuples(index=False)):
+            # Accessible fields via attribute lookup
+            dm = getattr(row, "dispensed_mass_g", None)
+            bm = getattr(row, "baseline_mass_g", None)
+            am = getattr(row, "after_mass_g", None)
+            mm = getattr(row, "measured_mass_g", None)
+            diff = None
+            if dm is not None and not pd.isna(dm):
+                diff = float(dm)
+            elif bm is not None and am is not None and (not pd.isna(bm)) and (not pd.isna(am)):
+                diff = float(am) - float(bm)
+            elif mm is not None and not pd.isna(mm):
+                if prev_mass is None:
+                    prev_mass = plate_tare if plate_tare is not None else float(mm)
+                diff = float(mm) - float(prev_mass)
+                if j == 0 and diff < 0:
+                    # Clamp first row to positive magnitude if tare slightly exceeds first reading
+                    diff = abs(diff)
+                prev_mass = float(mm)
+            dispensed.append(quant3(diff) if diff is not None else None)
 
     df_time["dispensed_mass_g"] = dispensed
     df_time["dispensed_volume_ml"] = df_time["dispensed_mass_g"]  # water assumption

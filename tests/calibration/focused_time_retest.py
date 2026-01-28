@@ -9,36 +9,37 @@ import logging
 # Ensure parent tests directory is on sys.path to import base_workflow
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 sys.path.append(os.path.abspath(os.path.dirname(__file__)))
-from base_workflow import Liquid_Dispenser, start_workflow_logging
+from base_workflow import Liquid_Dispenser
 from constants import (
     CALIBRATION_REPLICATES,
     AIR_TIME_S,
     BUFFER_TIME_S,
     ACTUATOR_SPEED,
     MAX_TIME_S,
-    SLOPE_SECONDS_PER_ML,
     RETRACT_MIN_TIME_S,
     RETRACT_MAX_TIME_S,
-    BLOWOUT_VOL_ML,
 )
 
 SIMULATE = False
 
 # Initialize dispenser
+
 dispenser = Liquid_Dispenser(cnc_comport="COM5", actuator_comport="COM3", virtual=SIMULATE, camera_index=0, log_level=logging.INFO)
 dispenser.cnc_machine.Z_LOW_BOUND = -70
 dispenser.cnc_machine.home()
 
 # Set up output logging for calibration runs
 session_ts = time.strftime("%Y%m%d_%H%M%S")
-OUTPUT_DIR = os.path.join("output", "calibration", f"time_volume_{session_ts}")
+OUTPUT_DIR = os.path.join("output", "calibration", f"time_volume_retest_{session_ts}")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 CSV_PATH = os.path.join(OUTPUT_DIR, "calibration_measurements.csv")
+
 
 def _append_measurement(row: dict):
     df = pd.DataFrame([row])
     header = not os.path.exists(CSV_PATH)
     df.to_csv(CSV_PATH, mode="a", header=header, index=False)
+
 
 def dispense_by_time(dispenser, source_location, source_index, retract_time, dest_location, dest_index, air_time=0.7, buffer_time=0.25, speed=32768):
     # Enforce retract time bounds with small tolerance to avoid FP edge issues
@@ -87,34 +88,31 @@ def dispense_by_time(dispenser, source_location, source_index, retract_time, des
         "speed": speed,
     }
 
+
 def _parse_args():
-    p = argparse.ArgumentParser(description="Time→Volume calibration runner (simplified)")
-    p.add_argument("--reps", type=int, default=CALIBRATION_REPLICATES, help="Replicates per time")
+    p = argparse.ArgumentParser(description="Focused time→volume retest runner (0.05, 0.50, 1.00 s)")
+    p.add_argument("--reps", type=int, default=CALIBRATION_REPLICATES, help="Replicates per time (default: 4)")
     p.add_argument("--air", type=float, default=AIR_TIME_S, help="Air buffer time (s)")
     p.add_argument("--buffer", type=float, default=BUFFER_TIME_S, help="Buffer time (s)")
     p.add_argument("--speed", type=int, default=ACTUATOR_SPEED, help="Actuator speed [0-65535]")
     return p.parse_args([] if hasattr(sys, 'ps1') else None)
 
-def _parse_float_list(s):
-    return [float(x) for x in s.split(',') if x.strip()]
 
 # Defaults and parsed overrides
 args = _parse_args()
-# Fixed calibration times per user request (six stamps)
-TIMES = [0.05, 0.25, 0.50, 0.75, 1.00, 1.25]
+TIMES = [0.05, 0.50, 1.00]
 
-BUFFER = args.buffer  # extra time to push out in seconds (used in both time and volume-based calibration)
-BLOWOUT_VOL = BLOWOUT_VOL_ML  # default (only used in volume-based calibration)
-AIR_TIME = args.air  # default air buffer time (only used in time-based calibration)
-SPEED = args.speed  # 32768 default, 65000 maximum speed
+BUFFER = args.buffer  # extra time to push out in seconds
+AIR_TIME = args.air   # air buffer time
+SPEED = args.speed    # actuator speed
 
 NUM_REPLICATES = args.reps  # number of replicate dispenses per time
-well_counter = 0  # starting well index
-MAX_WELLS = 24  # max number of wells to use for calibration (24 for 24-well plate)
+MAX_WELLS = 24
 
 # Dispensing by time calibration using grouped wells per time
 # Map times to wells in blocks of NUM_REPLICATES; reset every 24 wells (modulo mapping)
 groups_per_plate = MAX_WELLS // NUM_REPLICATES  # e.g., 24-well plate with 4 reps -> 6 groups
+
 for time_idx, t in enumerate(TIMES):
     base_well = (time_idx % groups_per_plate) * NUM_REPLICATES
     plate_index = time_idx // groups_per_plate
@@ -125,7 +123,7 @@ for time_idx, t in enumerate(TIMES):
             f"t={t:.3f}s → well {dest_well} (rep {rep + 1}/{NUM_REPLICATES}). Enter baseline mass BEFORE dispense (3 dp): "
         ).strip()
 
-        # Perform dispensing between prompts to match desired workflow
+        # Perform dispensing
         meta = dispense_by_time(
             dispenser,
             source_location="reservoir_12",
@@ -142,6 +140,7 @@ for time_idx, t in enumerate(TIMES):
         after_in = input(
             f"t={t:.3f}s → well {dest_well} (rep {rep + 1}/{NUM_REPLICATES}). Enter mass AFTER dispense (3 dp): "
         ).strip()
+
         measured_volume_ml = None
         baseline_mass_g = None
         after_mass_g = None
@@ -158,6 +157,7 @@ for time_idx, t in enumerate(TIMES):
                     print("Warning: net dispensed mass is negative; check inputs.")
             except ValueError:
                 print("Invalid mass inputs; skipping volume logging.")
+
         _append_measurement({
             "calibration_type": "time",
             "time_index": time_idx,

@@ -1,7 +1,7 @@
 """Minimal set of actuator/calibration constants used across tests."""
 
 # Hardware timing/limits
-MAX_TIME_S = 1.95            # Maximum actuator time for a single dispense (s)
+MAX_TIME_S = 2.20            # Maximum actuator time for a single dispense (s)
 SLOPE_SECONDS_PER_ML = 0.4061 # Time per mL (s/mL)
 
 # Actuator settings (kept constant during calibration)
@@ -36,5 +36,3 @@ CALIBRATION_EXPECTED_EXTEND_S = [
 	round(AIR_TIME_S + t + BUFFER_TIME_S, 3) for t in CALIBRATION_TIMES_S
 ]
 
-# Optional finer resolution set
-CALIBRATION_TIMES_FINE_S = [0.06, 0.08, 0.12, 0.16, 0.20]

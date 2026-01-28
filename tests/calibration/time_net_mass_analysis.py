@@ -7,8 +7,8 @@ import matplotlib.pyplot as plt
 
 
 def find_latest_net_csv(base_dir=os.path.join("output", "calibration")):
-    # Look for any mass_calibration_data_*_net.csv under time_volume_* folders
-    pattern = os.path.join(base_dir, "time_volume_*", "mass_calibration_data_*_net.csv")
+    # Look for any calibration_measurements_*_net.csv under time_volume_* folders
+    pattern = os.path.join(base_dir, "time_volume_*", "calibration_measurements*_net.csv")
     paths = sorted(glob.glob(pattern))
     return paths[-1] if paths else None
 
@@ -87,6 +87,21 @@ def main():
 
     k, b, r2, m_pred, seconds_per_gram = fit_linear(df_time)
 
+    # Compute per-time stats (mean, std, N) and write CSV
+    df_stats = (
+        df_time.assign(time_label=df_time["target_time_s"].round(3))
+        .groupby("time_label")
+        .agg(
+            target_time_s=("target_time_s", "mean"),
+            mean_mass_g=("dispensed_mass_g", "mean"),
+            std_mass_g=("dispensed_mass_g", lambda x: x.std(ddof=1)),
+            n=("dispensed_mass_g", "size"),
+        )
+        .reset_index(drop=True)
+    )
+    stats_csv = os.path.join(out_dir, "time_net_mass_stats.csv")
+    df_stats.to_csv(stats_csv, index=False)
+
     summary_path = os.path.join(out_dir, "time_net_mass_fit_summary.txt")
     with open(summary_path, "w") as f:
         f.write("Fit: mass = k * time + b\n")
@@ -95,11 +110,16 @@ def main():
         f.write(f"R^2      = {r2:.4f}\n")
         f.write(f"Seconds per gram (s/g) = {seconds_per_gram:.4f}\n")
         f.write(f"N = {len(df_time)} rows\n")
+        f.write("\nPer-time stats (mean ± std, n):\n")
+        for _, r in df_stats.iterrows():
+            f.write(f"t={r['target_time_s']:.3f}s: mean={r['mean_mass_g']:.4f} g, std={0.0 if pd.isna(r['std_mass_g']) else r['std_mass_g']:.4f} g, n={int(r['n'])}\n")
     print(f"Saved fit summary -> {summary_path}")
 
     p1 = plot_time_vs_net_mass(df_time, k, b, r2, out_dir)
     print("Saved plot:")
     print(" -", p1)
+    print("Saved per-time stats:")
+    print(" -", stats_csv)
 
 
 if __name__ == "__main__":
