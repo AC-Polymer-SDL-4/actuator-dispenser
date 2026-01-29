@@ -113,7 +113,8 @@ class Liquid_Dispenser:
         """
         # Volume calculation constants
         MAX_TIME = 1.95 #The maximum time for a single dispense in seconds (for liquid transfer AND blowout time!) -- edit based on calibration
-        SLOPE = 0.4061  # Time per mL conversion factor (seconds/mL, from calibration), before: 0.4295, 0.4679, 0.4052, 0.3865 (new metal syringe)
+        SLOPE = 0.3786  # Flow rate (mL/s) from latest calibration; previously: 0.4295, 0.4679, 0.4052, 0.3865 (new metal syringe)
+        v_0 = 0#0.0012
 
         SYRINGE_MAX_VOL = MAX_TIME*SLOPE #0.76  
         transfer_max_vol = SYRINGE_MAX_VOL-blowout_vol  # Maximum volume per dispense in mL (hardware limitation)
@@ -146,7 +147,7 @@ class Liquid_Dispenser:
         # Calculate how many dispense cycles we need
             num_dispenses = math.ceil(transfer_vol / transfer_max_vol)
             dispense_vol = transfer_vol / num_dispenses  # Volume per individual dispense
-            retract_time = dispense_vol/SLOPE # Time needed to aspirate this volume
+            retract_time = (dispense_vol - v_0) /SLOPE # Time needed to aspirate this volume
             
             
             if transfer_vol > (transfer_max_vol * 10):  # Reasonable upper limit
