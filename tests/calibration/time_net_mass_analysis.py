@@ -1,6 +1,7 @@
 import os
 import sys
 import glob
+import argparse
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -36,7 +37,7 @@ def fit_linear(df_time: pd.DataFrame):
     return k, b, r2, m_pred, seconds_per_gram
 
 
-def plot_time_vs_net_mass(df_time, k, b, r2, out_dir):
+def plot_time_vs_net_mass(df_time, k, b, r2, out_dir, label: str | None = None):
     plt.figure(figsize=(7, 5))
     # Raw replicates
     plt.scatter(df_time["target_time_s"], df_time["dispensed_mass_g"], alpha=0.5, label="Replicates")
@@ -55,7 +56,7 @@ def plot_time_vs_net_mass(df_time, k, b, r2, out_dir):
     plt.plot(t_line, k * t_line + b, color="orange", label="Linear fit")
     plt.xlabel("Time (s)")
     plt.ylabel("Net mass (g)")
-    plt.title("Time → Net Mass Calibration")
+    plt.title(label if label else "Time → Net Mass Calibration")
     plt.legend()
     plt.grid(True, alpha=0.3)
     # Annotate fit equation and R^2 on the plot
@@ -71,10 +72,12 @@ def plot_time_vs_net_mass(df_time, k, b, r2, out_dir):
 
 
 def main():
-    if len(sys.argv) > 1:
-        csv_path = sys.argv[1]
-    else:
-        csv_path = find_latest_net_csv()
+    ap = argparse.ArgumentParser(description="Analyze time→net mass data and generate plot/stats")
+    ap.add_argument("csv", nargs="?", help="Path to *_net.csv; if omitted, uses latest under output/calibration/time_volume_*/")
+    ap.add_argument("--label", dest="label", default=None, help="Custom plot title/label to annotate the graph")
+    args = ap.parse_args([] if hasattr(sys, 'ps1') else None)
+
+    csv_path = args.csv or find_latest_net_csv()
     if not csv_path or not os.path.exists(csv_path):
         print("No net calibration CSV found. Provide path explicitly or run net conversion first.")
         sys.exit(1)
@@ -115,7 +118,7 @@ def main():
             f.write(f"t={r['target_time_s']:.3f}s: mean={r['mean_mass_g']:.4f} g, std={0.0 if pd.isna(r['std_mass_g']) else r['std_mass_g']:.4f} g, n={int(r['n'])}\n")
     print(f"Saved fit summary -> {summary_path}")
 
-    p1 = plot_time_vs_net_mass(df_time, k, b, r2, out_dir)
+    p1 = plot_time_vs_net_mass(df_time, k, b, r2, out_dir, label=args.label)
     print("Saved plot:")
     print(" -", p1)
     print("Saved per-time stats:")

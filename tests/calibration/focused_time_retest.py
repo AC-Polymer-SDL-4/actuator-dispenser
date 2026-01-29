@@ -6,10 +6,11 @@ import pandas as pd
 from decimal import Decimal, ROUND_HALF_UP
 import logging
 
-# Ensure parent tests directory is on sys.path to import base_workflow
+# Ensure parent tests directory and workspace root are on sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 sys.path.append(os.path.abspath(os.path.dirname(__file__)))
-from base_workflow import Liquid_Dispenser
+from workflows.base_workflow import Liquid_Dispenser
 from constants import (
     CALIBRATION_REPLICATES,
     AIR_TIME_S,
