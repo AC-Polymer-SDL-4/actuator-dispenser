@@ -58,51 +58,17 @@ def dispense_volume_dispenser(dispenser: Liquid_Dispenser,
     }
 
 
-def dispense_volume_direct(dispenser: Liquid_Dispenser,
-                           source_location: str,
-                           source_index: int,
-                           dest_location: str,
-                           dest_index: int,
-                           transfer_vol_ml: float,
-                           slope_ml_per_s: float,
-                           blowout_vol_ml: float,
-                           buffer_time_s: float,
-                           speed: int):
-    # Compute timings using provided slope (mL/s)
-    air_time_s = blowout_vol_ml / slope_ml_per_s
-    retract_time_s = transfer_vol_ml / slope_ml_per_s
-    extend_time_s = air_time_s + retract_time_s + buffer_time_s
-    # Respect MAX_TIME by trimming buffer if needed
-    if extend_time_s > MAX_TIME_S:
-        buffer_time_s = max(0.0, MAX_TIME_S - air_time_s - retract_time_s)
-        extend_time_s = air_time_s + retract_time_s + buffer_time_s
+"""
+Single-path validation helper
 
-    # Execute the same physical sequence explicitly
-    dispenser.cnc_machine.move_to_location(source_location, source_index, safe=True)
-    dispenser.actuator.retract(air_time_s, speed=speed)
-    dispenser.cnc_machine.move_to_aspirate_height(source_location)
-    dispenser.actuator.retract(retract_time_s, speed=speed)
-    dispenser.cnc_machine.move_to_point(z=0)
-    dispenser.cnc_machine.move_to_location(dest_location, dest_index, safe=True)
-    dispenser.cnc_machine.move_to_dispense_height(dest_location)
-    dispenser.actuator.extend(extend_time_s, speed=speed)
-    dispenser.cnc_machine.move_to_point(z=0)
-
-    return {
-        "mode": "direct",
-        "speed": speed,
-        "buffer_time_s": buffer_time_s,
-        "blowout_vol_ml": blowout_vol_ml,
-        "air_time_s": air_time_s,
-        "retract_time_s": retract_time_s,
-        "extend_time_s": extend_time_s,
-    }
+This script validates the embedded timing in dispenser.py by calling
+`Liquid_Dispenser.dispense_between()` directly and measuring delivered mass.
+Any previous 'direct' timing mode is removed to ensure we test production code.
+"""
 
 
 def parse_args():
-    p = argparse.ArgumentParser(description="Volume validation: compare dispenser volume-mode vs direct timed-mode with custom slope.")
-    p.add_argument("mode", choices=["dispenser", "direct"], help="Validation mode. 'dispenser' uses embedded slope; 'direct' uses --slope.")
-    p.add_argument("--slope", type=float, default=0.3786, help="Slope (mL/s) for direct mode. Ignored in dispenser mode.")
+    p = argparse.ArgumentParser(description="Volume validation: test dispenser.py timing by calling dispense_between() and weighing results.")
     p.add_argument("--volumes", type=str, default="0.10,0.15,0.20,0.25", help="Comma-separated target volumes (mL).")
     p.add_argument("--reps", type=int, default=4, help="Replicates per target volume.")
     p.add_argument("--speed", type=int, default=ACTUATOR_SPEED, help="Actuator speed [0-65535].")
@@ -126,7 +92,7 @@ def main():
 
     # Output directory
     session_ts = time.strftime("%Y%m%d_%H%M%S")
-    out_dir = Path("output/calibration") / f"volume_validation_{args.mode}_{session_ts}"
+    out_dir = Path("output/calibration") / f"volume_validation_dispenser_{session_ts}"
     out_dir.mkdir(parents=True, exist_ok=True)
     csv_path = out_dir / "calibration_measurements_net.csv"
 
@@ -143,32 +109,18 @@ def main():
                 f"V={vol_ml:.3f} mL → well {dest_well} (rep {rep + 1}/{args.reps}). Enter baseline mass BEFORE dispense (3 dp): "
             ).strip()
 
-            # Perform dispensing per mode
-            if args.mode == "dispenser":
-                meta = dispense_volume_dispenser(
-                    dispenser,
-                    source_location=args.src_loc,
-                    source_index=args.src_idx,
-                    dest_location=args.dst_loc,
-                    dest_index=dest_well,
-                    transfer_vol_ml=vol_ml,
-                    blowout_vol_ml=args.blowout,
-                    buffer_time_s=args.buffer,
-                    speed=args.speed,
-                )
-            else:
-                meta = dispense_volume_direct(
-                    dispenser,
-                    source_location=args.src_loc,
-                    source_index=args.src_idx,
-                    dest_location=args.dst_loc,
-                    dest_index=dest_well,
-                    transfer_vol_ml=vol_ml,
-                    slope_ml_per_s=args.slope,
-                    blowout_vol_ml=args.blowout,
-                    buffer_time_s=args.buffer,
-                    speed=args.speed,
-                )
+            # Perform dispensing via dispenser.py production path
+            meta = dispense_volume_dispenser(
+                dispenser,
+                source_location=args.src_loc,
+                source_index=args.src_idx,
+                dest_location=args.dst_loc,
+                dest_index=dest_well,
+                transfer_vol_ml=vol_ml,
+                blowout_vol_ml=args.blowout,
+                buffer_time_s=args.buffer,
+                speed=args.speed,
+            )
 
             # Mass AFTER
             after_in = input(
@@ -190,7 +142,7 @@ def main():
                 print("Invalid mass inputs; row will record only metadata.")
 
             _append_row(str(csv_path), {
-                "calibration_type": f"volume_{args.mode}",
+                        "calibration_type": "volume_dispenser",
                 "volume_index": vol_idx,
                 "plate_index": plate_index,
                 "replicate": rep + 1,

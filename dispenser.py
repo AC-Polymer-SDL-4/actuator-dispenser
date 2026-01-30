@@ -85,7 +85,8 @@ class Liquid_Dispenser:
             raise
 
     def dispense_between(self, source_location, source_index, dest_location, dest_index, 
-                        transfer_vol, blowout_vol = 0.28, buffer_time=0.25, speed=32768, mixing_vol = 0, num_mixes=3, mixing_speed = 32768):
+                        transfer_vol, blowout_vol = 0.28, buffer_time=0.25, speed=32768, mixing_vol = 0, num_mixes=3, mixing_speed = 32768,
+                        volume_offset=0.0012):
         """
         Transfer liquid from a source location to a destination location,
         with optional mixing. Also supports mixing-only without transfer by setting transfer_vol = 0.
@@ -110,11 +111,13 @@ class Liquid_Dispenser:
             speed (int): Actuator speed (0-65535)
             mixing_vol (int): (float): Volume to use during mixing (mL) (0 if no mixing)
             num_mixes (int): Number of mixing cycles to perform
+            volume_offset (float): Intercept from calibration (mL). Per-dispense offset applied so
+                                   target per cycle is achieved via t = max((vol_per_dispense - volume_offset), 0) / SLOPE.
         """
         # Volume calculation constants
         MAX_TIME = 1.95 #The maximum time for a single dispense in seconds (for liquid transfer AND blowout time!) -- edit based on calibration
         SLOPE = 0.3786  # Flow rate (mL/s) from latest calibration; previously: 0.4295, 0.4679, 0.4052, 0.3865 (new metal syringe)
-        v_0 = 0#0.0012
+        #v_0 = 0.0012
 
         SYRINGE_MAX_VOL = MAX_TIME*SLOPE #0.76  
         transfer_max_vol = SYRINGE_MAX_VOL-blowout_vol  # Maximum volume per dispense in mL (hardware limitation)
@@ -147,7 +150,9 @@ class Liquid_Dispenser:
         # Calculate how many dispense cycles we need
             num_dispenses = math.ceil(transfer_vol / transfer_max_vol)
             dispense_vol = transfer_vol / num_dispenses  # Volume per individual dispense
-            retract_time = (dispense_vol - v_0) /SLOPE # Time needed to aspirate this volume
+            # retract_time = dispense_vol /SLOPE # Time needed to aspirate this volume
+            effective_dispense_vol = max(dispense_vol - volume_offset, 0.0)
+            retract_time = effective_dispense_vol / SLOPE  # Time needed to aspirate this volume accounting for intercept
             
             
             if transfer_vol > (transfer_max_vol * 10):  # Reasonable upper limit
@@ -160,8 +165,8 @@ class Liquid_Dispenser:
             retract_time = 0
         
         self.logger.debug(
-            "Dispense calculations: total_vol=%.3f, transfer_max_vol=%.3f, num_dispenses=%d, vol_per_dispense=%.3f, retract_time=%.2f",
-            transfer_vol, transfer_max_vol, num_dispenses, dispense_vol, retract_time
+            "Dispense calculations: total_vol=%.3f, transfer_max_vol=%.3f, num_dispenses=%d, vol_per_dispense=%.3f, vol_offset=%.4f, effective_vol=%.3f, retract_time=%.3f",
+            transfer_vol, transfer_max_vol, num_dispenses, dispense_vol, volume_offset, (effective_dispense_vol if transfer_vol > 0 else 0.0), (retract_time if transfer_vol > 0 else 0.0)
         )
         
         #start dispense

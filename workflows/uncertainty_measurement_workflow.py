@@ -47,14 +47,14 @@ COLOR_SPACES = ['RGB', 'LAB', 'HSV']  # Color spaces to analyze
 
 # Operation mode
 MANUAL_MODE = False  # True: Only imaging, False: Pipetting + imaging
-VIRTUAL = False  # For testing without hardware
+VIRTUAL = True  # For testing without hardware
 SAVE_DATA = True  # Save data even in virtual mode
 
 # Reservoir mapping (for future pipetting mode)
 RESERVOIRS = {
     'R': 0,      # Red colorant
-    'B': 1,      # Yellow colorant  
-    'Y': 2,      # Blue colorant
+    'Y': 1,      # Yellow colorant  
+    'B': 2,      # Blue colorant
     'Water': 3,  # Water/diluent
     'wash': 4,   # Wash solution
     'condition_water_1': 5,   # Condition water
@@ -155,6 +155,7 @@ def create_test_mixtures(dispenser, logger):
     logger.info("Creating test mixtures for uncertainty measurement...")
     
     # Define 4 test compositions (volumes in mL) - MODIFY THESE VALUES AS NEEDED
+    #TODO how the concentrations are chosen
     test_compositions = {
         1: {'R': 0.3, 'Y': 0.3, 'B': 0.3, 'Water': 0.1},  # Group 1: wells 0-5
         2: {'R': 0.5, 'Y': 0.2, 'B': 0.2, 'Water': 0.1},  # Group 2: wells 6-11  
