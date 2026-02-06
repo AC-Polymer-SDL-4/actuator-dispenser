@@ -20,7 +20,8 @@ class Camera:
       - Compatible with CNC_Machine logging system
     """
     
-    def __init__(self, camera_index=0, output_dir="captured_images", virtual=False, log_level=logging.INFO, log_filename=None):
+    def __init__(self, camera_index=0, output_dir="captured_images", virtual=False, log_level=logging.INFO, log_filename=None,
+                 anti_flicker_hz: int = 60, preferred_fourcc: str = "MJPG", target_fps: int = 30):
         """
         Initialize the camera controller.
         
@@ -34,6 +35,9 @@ class Camera:
         self.virtual = virtual
         self.camera_index = camera_index
         self.cap = None
+        self.anti_flicker_hz = anti_flicker_hz
+        self.preferred_fourcc = preferred_fourcc
+        self.target_fps = target_fps
         
         # Setup centralized logging with virtual mode tagging
         self.logger = setup_logger("camera", virtual=virtual, log_level=log_level, log_filename=log_filename)
@@ -49,23 +53,77 @@ class Camera:
         
         if not self.virtual:
             try:
-                # Initialize actual camera hardware
+                # Initialize actual camera hardware with backend fallbacks
                 self.logger.info("Initializing camera hardware on index %d", camera_index)
-                self.cap = cv2.VideoCapture(camera_index, cv2.CAP_DSHOW)
-                self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
-                self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
-                self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1) #minimize buffering
-                
-                # Warm-up camera
+
+                def try_open(idx: int):
+                    backends = [getattr(cv2, 'CAP_DSHOW', None), getattr(cv2, 'CAP_MSMF', None), getattr(cv2, 'CAP_ANY', 0)]
+                    for be in backends:
+                        if be is None:
+                            continue
+                        cap = cv2.VideoCapture(idx, be)
+                        if cap is not None and cap.isOpened():
+                            self.logger.info("Camera opened with backend=%s on index %d", str(be), idx)
+                            return cap
+                        # Ensure release if opened partially
+                        try:
+                            if cap is not None:
+                                cap.release()
+                        except Exception:
+                            pass
+                    return None
+
+                # First try requested index
+                cap = try_open(self.camera_index)
+                # Fallback to index 0 if different and failed
+                if cap is None and self.camera_index != 0:
+                    self.logger.warning("Failed to open camera at index %d; trying index 0", self.camera_index)
+                    cap = try_open(0)
+
+                if cap is None:
+                    raise RuntimeError(f"Unable to open camera at indices [{self.camera_index}, 0] with available backends")
+
+                self.cap = cap
+                # Apply preferred properties (best-effort)
+                try:
+                    self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
+                    self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
+                    self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # minimize buffering
+                    # Try to enforce preferred pixel format (FOURCC)
+                    if isinstance(self.preferred_fourcc, str) and len(self.preferred_fourcc) == 4:
+                        fourcc_val = cv2.VideoWriter_fourcc(*self.preferred_fourcc)
+                        self.cap.set(cv2.CAP_PROP_FOURCC, fourcc_val)
+                        read_back = int(self.cap.get(cv2.CAP_PROP_FOURCC))
+                        back_str = ''.join([chr((read_back >> (8 * i)) & 0xFF) for i in range(4)])
+                        self.logger.info("Requested FOURCC=%s, camera reports FOURCC=%s", self.preferred_fourcc, back_str)
+                    # FPS preference
+                    if self.target_fps:
+                        self.cap.set(cv2.CAP_PROP_FPS, float(self.target_fps))
+                except Exception:
+                    self.logger.debug("Setting camera properties failed; continuing with defaults")
+
+                # Try anti-flicker-friendly exposure (best effort)
+                try:
+                    self._apply_antiflicker_exposure()
+                except Exception:
+                    self.logger.debug("Exposure tuning not supported by this device/backend; skipping")
+
+                # Warm-up camera with retries
                 self.logger.debug("Warming up camera...")
-                time.sleep(1.5)
-                for i in range(10):
+                time.sleep(1.0)
+                ok_frames = 0
+                for i in range(15):
                     ret, _ = self.cap.read()
-                    if not ret:
-                        self.logger.warning("Camera warm-up frame %d failed", i+1)
-                    time.sleep(0.1)
-                self.logger.info("Camera warm-up completed")
-                
+                    if ret:
+                        ok_frames += 1
+                    else:
+                        self.logger.warning("Camera warm-up frame %d failed", i + 1)
+                    time.sleep(0.08)
+                if ok_frames < 3:
+                    self.logger.warning("Camera warm-up had few successful frames (%d/15)", ok_frames)
+                else:
+                    self.logger.info("Camera warm-up completed (%d/15 frames ok)", ok_frames)
+
             except Exception as e:
                 self.logger.error("Failed to initialize camera: %s", e)
                 raise
@@ -91,11 +149,21 @@ class Camera:
         
         try:
             # Take a few frames to stabilize
-            for i in range(3):
+            if self.cap is None or not self.cap.isOpened():
+                self.logger.warning("Capture handle not opened; attempting to reinitialize camera")
+                # Try to reopen using current settings
+                tmp = cv2.VideoCapture(self.camera_index, getattr(cv2, 'CAP_ANY', 0))
+                if tmp is not None and tmp.isOpened():
+                    self.cap = tmp
+                else:
+                    self.logger.error("Failed to reopen camera before capture")
+                    return None
+
+            for i in range(5):
                 ret, _ = self.cap.read()
                 if not ret:
-                    self.logger.warning("Stabilization frame %d failed", i+1)
-                time.sleep(0.2)
+                    self.logger.warning("Stabilization frame %d failed", i + 1)
+                time.sleep(0.15)
             
             # Capture the actual frame
             ret, frame = self.cap.read()
@@ -112,6 +180,49 @@ class Camera:
         except Exception as e:
             self.logger.error("Exception during image capture: %s", e)
             return None
+
+    def _apply_antiflicker_exposure(self):
+        """Best-effort anti-flicker exposure tuning for 50/60Hz lighting.
+
+        On Windows, exposure units vary by backend. We'll try common patterns:
+        - Turn off auto exposure when possible.
+        - Set exposure near 1/60s (60 Hz) or 1/50s (50 Hz). For DSHOW-like backends
+          OpenCV often uses log2 time (e.g., -6 ~ 1/64s). We'll try a small set.
+        """
+        if self.cap is None or not self.cap.isOpened():
+            return
+
+        # Try disabling auto exposure (multiple conventions)
+        for val in (0.25, 0.0, 1.0):  # 0.25 (DSHOW manual), 0.0 (manual MSMF), 1.0 (some toggles)
+            try:
+                ok = self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, float(val))
+                if ok:
+                    self.logger.info("Set CAP_PROP_AUTO_EXPOSURE=%s", val)
+                    break
+            except Exception:
+                pass
+
+        # Pick target exposure candidates aligned to mains flicker
+        # Use log2 seconds for DSHOW-like drivers; try a few around 1/60 and 1/50
+        if int(self.anti_flicker_hz) == 50:
+            candidates = [-5.6, -5.0, -6.0]  # around 1/50..1/64s
+        else:
+            candidates = [-6.0, -5.6, -5.0]  # around 1/60..1/32s
+
+        success = False
+        for v in candidates:
+            try:
+                ok = self.cap.set(cv2.CAP_PROP_EXPOSURE, float(v))
+                readback = self.cap.get(cv2.CAP_PROP_EXPOSURE)
+                self.logger.info("Tried exposure %.2f; camera reports %.2f (ok=%s)", v, readback, str(ok))
+                # Consider success if set call returned True or readback moved near v
+                if ok or (abs((readback or 0) - v) < 0.6):
+                    success = True
+                    break
+            except Exception:
+                continue
+        if not success:
+            self.logger.debug("Exposure setting attempts did not succeed; leaving device defaults")
 
     def cleanup(self):
         """
@@ -215,13 +326,22 @@ x
             width, height = image.size
             self.logger.debug("Image dimensions: %dx%d", width, height)
 
-            # Define the center crop box
-            half_size = square_size // 2
+            # Define the center crop box (ensure at least 1x1 pixels)
+            try:
+                sq = int(square_size) if square_size is not None else 1
+            except Exception:
+                sq = 1
+            if sq < 1:
+                sq = 1
+
             center_x, center_y = width // 2, height // 2
-            left = max(center_x - half_size, 0)
-            top = max(center_y - half_size, 0)
-            right = min(center_x + half_size, width)
-            bottom = min(center_y + half_size, height)
+            # Compute start so that end = start + sq, clamped within image
+            start_x = max(min(center_x - (sq // 2), width - sq), 0)
+            start_y = max(min(center_y - (sq // 2), height - sq), 0)
+            left = int(start_x)
+            top = int(start_y)
+            right = int(min(left + sq, width))
+            bottom = int(min(top + sq, height))
 
             # Crop the image and convert to numpy array
             cropped = image.crop((left, top, right, bottom))

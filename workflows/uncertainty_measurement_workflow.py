@@ -47,7 +47,7 @@ COLOR_SPACES = ['RGB', 'LAB', 'HSV']  # Color spaces to analyze
 
 # Operation mode
 MANUAL_MODE = False  # True: Only imaging, False: Pipetting + imaging
-VIRTUAL = True  # For testing without hardware
+VIRTUAL = False  # Set False to run on real hardware
 SAVE_DATA = True  # Save data even in virtual mode
 
 # Reservoir mapping (for future pipetting mode)
@@ -55,11 +55,12 @@ RESERVOIRS = {
     'R': 0,      # Red colorant
     'Y': 1,      # Yellow colorant  
     'B': 2,      # Blue colorant
-    'Water': 3,  # Water/diluent
-    'wash': 4,   # Wash solution
+    
+    'Water': 3,  # Water/diluent # this one needs water
+    'wash': 4,   # Wash solution # this one needs water
     'condition_water_1': 5,   # Condition water
     'condition_waste_1': 6,   # Condition waste
-    'condition_water_2': 7,   # Second condition water (if needed)
+    'condition_water_2': 7,   # Second condition water (if needed) # this one needs water
     'condition_waste_2': 8,   # Second condition waste (if needed)
     'waste': 9   # Waste container
 }

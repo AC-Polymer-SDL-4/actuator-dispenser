@@ -6,10 +6,11 @@ import pandas as pd
 from decimal import Decimal, ROUND_HALF_UP
 import logging
 
-# Ensure parent tests directory is on sys.path to import base_workflow
+# Ensure parent tests directory and workspace root are on sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 sys.path.append(os.path.abspath(os.path.dirname(__file__)))
-from base_workflow import Liquid_Dispenser
+from workflows.base_workflow import Liquid_Dispenser
 from constants import (
     CALIBRATION_REPLICATES,
     AIR_TIME_S,
@@ -90,8 +91,8 @@ def dispense_by_time(dispenser, source_location, source_index, retract_time, des
 
 
 def _parse_args():
-    p = argparse.ArgumentParser(description="Focused time→volume retest runner (0.05, 0.50, 1.00 s)")
-    p.add_argument("--reps", type=int, default=CALIBRATION_REPLICATES, help="Replicates per time (default: 4)")
+    p = argparse.ArgumentParser(description="Focused time→volume retest runner (0.50, 1.00 s)")
+    p.add_argument("--reps", type=int, default=3, help="Replicates per time (default: 3)")
     p.add_argument("--air", type=float, default=AIR_TIME_S, help="Air buffer time (s)")
     p.add_argument("--buffer", type=float, default=BUFFER_TIME_S, help="Buffer time (s)")
     p.add_argument("--speed", type=int, default=ACTUATOR_SPEED, help="Actuator speed [0-65535]")
@@ -100,7 +101,7 @@ def _parse_args():
 
 # Defaults and parsed overrides
 args = _parse_args()
-TIMES = [0.05, 0.50, 1.00]
+TIMES = [0.50, 1.00]
 
 BUFFER = args.buffer  # extra time to push out in seconds
 AIR_TIME = args.air   # air buffer time
@@ -135,6 +136,36 @@ for time_idx, t in enumerate(TIMES):
             buffer_time=BUFFER,
             air_time=AIR_TIME,
         )
+
+        # Apply tip conditioning and rinse between replicates (reuse approach from uncertainty workflow)
+        try:
+            # Choose conditioning set based on well region (first half uses set 1, second half set 2)
+            condition_index = 2 if dest_well > (MAX_WELLS // 2) else 1
+            # Reservoir indices as used in uncertainty workflow mapping
+            CONDITION_WATER = 5 if condition_index == 1 else 7
+            CONDITION_WASTE = 6 if condition_index == 1 else 8
+            WASH_INDEX = 4
+            # Pipet a reasonable conditioning volume
+            vol_pipet = 0.30  # mL; bounded by device capability
+            dispenser.condition_needle(
+                source_location="reservoir_12",
+                source_index=CONDITION_WATER,
+                dest_location="reservoir_12",
+                dest_index=CONDITION_WASTE,
+                vol_pipet=vol_pipet,
+                speed=SPEED,
+                num_conditions=1,
+            )
+            dispenser.rinse_needle(
+                wash_location="reservoir_12",
+                wash_index=WASH_INDEX,
+                num_mixes=3,
+                speed=SPEED,
+            )
+            if not SIMULATE:
+                time.sleep(0.5)
+        except Exception as e:
+            dispenser.logger.warning(f"Tip conditioning step failed or unsupported: {e}")
 
         # Prompt for mass AFTER dispensing (3 dp)
         after_in = input(

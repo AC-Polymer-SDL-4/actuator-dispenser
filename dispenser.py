@@ -150,7 +150,7 @@ class Liquid_Dispenser:
         # Calculate how many dispense cycles we need
             num_dispenses = math.ceil(transfer_vol / transfer_max_vol)
             dispense_vol = transfer_vol / num_dispenses  # Volume per individual dispense
-            # retract_time = dispense_vol /SLOPE # Time needed to aspirate this volume
+            #retract_time = dispense_vol /SLOPE # Time needed to aspirate this volume
             effective_dispense_vol = max(dispense_vol - volume_offset, 0.0)
             retract_time = effective_dispense_vol / SLOPE  # Time needed to aspirate this volume accounting for intercept
             

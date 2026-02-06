@@ -79,6 +79,12 @@ def parse_args():
     p.add_argument("--src_idx", type=int, default=11, help="Source index.")
     p.add_argument("--dst_loc", type=str, default="well_plate", help="Destination location name.")
     p.add_argument("--dst_plate_wells", type=int, default=24, help="Total wells per plate for indexing.")
+    p.add_argument("--condition", action="store_true", help="Apply tip conditioning and rinse between dispenses.")
+    p.add_argument("--cond-volume", type=float, default=0.30, help="Conditioning pipet volume (mL).")
+    p.add_argument("--wash-mixes", type=int, default=3, help="Number of wash mixes during rinse.")
+    p.add_argument("--prewet", action="store_true", help="Pre-wet tip with sample before first dispense.")
+    p.add_argument("--prewet-volume", type=float, default=0.10, help="Pre-wet volume (mL) aspirated and returned to source.")
+    p.add_argument("--prewet-cycles", type=int, default=2, help="Number of pre-wet cycles before first dispense.")
     return p.parse_args([] if hasattr(sys, 'ps1') else None)
 
 
@@ -95,6 +101,27 @@ def main():
     out_dir = Path("output/calibration") / f"volume_validation_dispenser_{session_ts}"
     out_dir.mkdir(parents=True, exist_ok=True)
     csv_path = out_dir / "calibration_measurements_net.csv"
+
+    # Optional pre-wet: aspirate and dispense back to source to wet inner walls
+    if args.prewet:
+        try:
+            for _ in range(max(1, int(args.prewet_cycles))):
+                dispense_volume_dispenser(
+                    dispenser,
+                    source_location=args.src_loc,
+                    source_index=args.src_idx,
+                    dest_location=args.src_loc,
+                    dest_index=args.src_idx,
+                    transfer_vol_ml=float(args.prewet_volume),
+                    blowout_vol_ml=args.blowout,
+                    buffer_time_s=args.buffer,
+                    speed=args.speed,
+                )
+                if not args.simulate:
+                    time.sleep(0.3)
+            dispenser.logger.info("Pre-wet cycles completed: %d × %.3f mL", int(args.prewet_cycles), float(args.prewet_volume))
+        except Exception as e:
+            dispenser.logger.warning(f"Pre-wet step failed or unsupported: {e}")
 
     # Iterate volumes and replicates, allocate wells sequentially by volume
     well_counter = 0
@@ -121,6 +148,33 @@ def main():
                 buffer_time_s=args.buffer,
                 speed=args.speed,
             )
+
+            # Optional tip conditioning and rinse (reuse approach from uncertainty workflow)
+            if args.condition:
+                try:
+                    condition_index = 2 if dest_well > (args.dst_plate_wells // 2) else 1
+                    CONDITION_WATER = 5 if condition_index == 1 else 7
+                    CONDITION_WASTE = 6 if condition_index == 1 else 8
+                    WASH_INDEX = 4
+                    dispenser.condition_needle(
+                        source_location="reservoir_12",
+                        source_index=CONDITION_WATER,
+                        dest_location="reservoir_12",
+                        dest_index=CONDITION_WASTE,
+                        vol_pipet=args.cond_volume,
+                        speed=args.speed,
+                        num_conditions=1,
+                    )
+                    dispenser.rinse_needle(
+                        wash_location="reservoir_12",
+                        wash_index=WASH_INDEX,
+                        num_mixes=args.wash_mixes,
+                        speed=args.speed,
+                    )
+                    if not args.simulate:
+                        time.sleep(0.5)
+                except Exception as e:
+                    dispenser.logger.warning(f"Tip conditioning step failed or unsupported: {e}")
 
             # Mass AFTER
             after_in = input(
