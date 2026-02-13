@@ -58,7 +58,7 @@ RESERVOIRS = {
     
     'Water': 3,  # Water/diluent # this one needs water
     'wash': 4,   # Wash solution # this one needs water
-    'condition_water_1': 5,   # Condition water
+    'condition_water_1': 5,   # Condition water # this one needs water
     'condition_waste_1': 6,   # Condition waste
     'condition_water_2': 7,   # Second condition water (if needed) # this one needs water
     'condition_waste_2': 8,   # Second condition waste (if needed)
@@ -159,9 +159,9 @@ def create_test_mixtures(dispenser, logger):
     #TODO how the concentrations are chosen
     test_compositions = {
         1: {'R': 0.3, 'Y': 0.3, 'B': 0.3, 'Water': 0.1},  # Group 1: wells 0-5
-        2: {'R': 0.5, 'Y': 0.2, 'B': 0.2, 'Water': 0.1},  # Group 2: wells 6-11  
-        3: {'R': 0.2, 'Y': 0.5, 'B': 0.2, 'Water': 0.1},  # Group 3: wells 12-17
-        4: {'R': 0.2, 'Y': 0.2, 'B': 0.5, 'Water': 0.1},  # Group 4: wells 18-23
+        2: {'R': 0.7, 'Y': 0.1, 'B': 0.1, 'Water': 0.1},  # Group 2: wells 6-11  
+        3: {'R': 0.1, 'Y': 0.7, 'B': 0.1, 'Water': 0.1},  # Group 3: wells 12-17
+        4: {'R': 0.1, 'Y': 0.1, 'B': 0.7, 'Water': 0.1},  # Group 4: wells 18-23
     }
     
     logger.info("Test compositions defined:")
@@ -393,6 +393,30 @@ def main():
     )
     dispenser.cnc_machine.Z_LOW_BOUND = -70
     dispenser.cnc_machine.home()
+
+    # Preflight camera check: ensure we can capture a test frame before workflow
+    try:
+        logger.info("Running camera preflight check...")
+        # Move to camera imaging position for a valid scene
+        try:
+            dispenser.cnc_machine.move_to_location("well_plate_camera", 0, safe=True)
+        except Exception:
+            pass
+        preflight_ok = False
+        for attempt in range(1, 3):
+            img = dispenser.camera.capture_and_save(f"preflight_{attempt}")
+            if img:
+                logger.info(f"Camera preflight succeeded on attempt {attempt}: {img}")
+                preflight_ok = True
+                break
+            else:
+                logger.warning(f"Camera preflight attempt {attempt} failed; retrying...")
+                time.sleep(0.5)
+        if not preflight_ok:
+            raise RuntimeError("Camera preflight failed — aborting workflow.")
+    except Exception as e:
+        logger.error(f"Camera preflight error: {e}")
+        raise
     
     # Send Slack notification if using real hardware
     if not dispenser.virtual:

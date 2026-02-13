@@ -13,7 +13,7 @@ class CNC_Machine:
     """
 
     def __init__(self, com, baud_rate=115200, x_low_bound=0, x_high_bound=270, 
-                 y_low_bound=0, y_high_bound=150, z_low_bound=-35, z_high_bound=0,
+                 y_low_bound=0, y_high_bound=150, z_low_bound=-70, z_high_bound=0,
                  virtual=False, locations_file='location_status.yaml', log_level=logging.INFO, log_filename=None):
         
         # Setup centralized logging with virtual mode tagging

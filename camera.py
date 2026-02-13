@@ -121,6 +121,8 @@ class Camera:
                     time.sleep(0.08)
                 if ok_frames < 3:
                     self.logger.warning("Camera warm-up had few successful frames (%d/15)", ok_frames)
+                    # Attempt a fallback reopen with alternate settings
+                    self._fallback_reopen()
                 else:
                     self.logger.info("Camera warm-up completed (%d/15 frames ok)", ok_frames)
 
@@ -129,6 +131,64 @@ class Camera:
                 raise
         else:
             self.logger.info("[VIRTUAL] Camera hardware initialization skipped")
+
+    def _fallback_reopen(self):
+        """Attempt to reopen camera with alternate backend and conservative settings."""
+        try:
+            # Release current handle if any
+            try:
+                if self.cap is not None:
+                    self.cap.release()
+            except Exception:
+                pass
+            self.cap = None
+
+            self.logger.info("Attempting camera fallback reopen...")
+
+            # Try MSMF first, then DSHOW, then ANY
+            backends = [getattr(cv2, 'CAP_MSMF', None), getattr(cv2, 'CAP_DSHOW', None), getattr(cv2, 'CAP_ANY', 0)]
+            for be in backends:
+                if be is None:
+                    continue
+                cap = cv2.VideoCapture(self.camera_index, be)
+                if cap is not None and cap.isOpened():
+                    self.logger.info("Fallback opened camera with backend=%s", str(be))
+                    # Conservative settings: lower res, auto exposure
+                    try:
+                        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+                        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+                        cap.set(cv2.CAP_PROP_FPS, 30.0)
+                        # Prefer auto exposure to avoid unsupported manual modes
+                        cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 0.25)
+                    except Exception:
+                        pass
+                    # Warm-up a few frames
+                    ok = 0
+                    for i in range(10):
+                        ret, _ = cap.read()
+                        ok += int(bool(ret))
+                        time.sleep(0.08)
+                    if ok >= 3:
+                        self.logger.info("Fallback warm-up succeeded (%d/10)", ok)
+                        self.cap = cap
+                        return
+                    else:
+                        self.logger.warning("Fallback warm-up had few frames (%d/10); trying next backend", ok)
+                        try:
+                            cap.release()
+                        except Exception:
+                            pass
+                        continue
+                # Release unsuccessful open
+                try:
+                    if cap is not None:
+                        cap.release()
+                except Exception:
+                    pass
+
+            self.logger.error("Camera fallback reopen failed across all backends")
+        except Exception as e:
+            self.logger.error("Fallback reopen exception: %s", e)
     def capture_and_save(self, dest_index):
         """
         Capture an image and save it to the output directory.
@@ -151,13 +211,16 @@ class Camera:
             # Take a few frames to stabilize
             if self.cap is None or not self.cap.isOpened():
                 self.logger.warning("Capture handle not opened; attempting to reinitialize camera")
-                # Try to reopen using current settings
-                tmp = cv2.VideoCapture(self.camera_index, getattr(cv2, 'CAP_ANY', 0))
-                if tmp is not None and tmp.isOpened():
-                    self.cap = tmp
-                else:
-                    self.logger.error("Failed to reopen camera before capture")
-                    return None
+                # Try fallback reopen first
+                self._fallback_reopen()
+                if self.cap is None or not self.cap.isOpened():
+                    # Final attempt with CAP_ANY
+                    tmp = cv2.VideoCapture(self.camera_index, getattr(cv2, 'CAP_ANY', 0))
+                    if tmp is not None and tmp.isOpened():
+                        self.cap = tmp
+                    else:
+                        self.logger.error("Failed to reopen camera before capture")
+                        return None
 
             for i in range(5):
                 ret, _ = self.cap.read()

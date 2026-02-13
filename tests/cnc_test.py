@@ -39,9 +39,9 @@ cnc = CNC_Machine(com = "COM5", z_low_bound=-70)
 try:
 	cnc.home()
 
-	for i in range(24):
+	for i in range(12):
 		print(f"Visiting well {i}")
-		cnc.move_to_location(location_name='well_plate', location_index=i, safe=True, speed=1500)
+		cnc.move_to_location(location_name='reservoir_12', location_index=i, safe=True, speed=1500)
 		time.sleep(0.3)
 
 	cnc.move_to_point_safe(x=0, y=0, z=0, speed=1500)
