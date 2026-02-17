@@ -1,5 +1,4 @@
 import argparse
-import os
 from pathlib import Path
 from typing import Dict, List
 
@@ -9,13 +8,23 @@ import matplotlib.pyplot as plt
 from scipy import stats
 
 # --- Normalization helpers ---
-def srgb_to_linear_channel(v_uint8: np.ndarray) -> np.ndarray:
-    s = v_uint8.astype(np.float64) / 255.0
-    out = np.where(s <= 0.04045, s / 12.92, ((s + 0.055) / 1.055) ** 2.4)
+
+def srgb_to_linear_channel(v: np.ndarray) -> np.ndarray:
+    """Convert sRGB channel values to linear-light.
+
+    Accepts arrays in 0..1 or 0..255; auto-scales if needed.
+    """
+    v = np.array(v, dtype=float)
+    if np.nanmax(v) > 1.5:
+        v = v / 255.0
+    out = np.empty_like(v, dtype=float)
+    mask = v <= 0.04045
+    out[mask] = v[mask] / 12.92
+    out[~mask] = ((v[~mask] + 0.055) / 1.055) ** 2.4
     return out
 
 def compute_normalized_rgb(df: pd.DataFrame) -> pd.DataFrame:
-    # Use well means per group to reduce replicate noise
+    """Normalize RGB using linearized sRGB fractions R', G', B'."""
     cols = ['RGB_R', 'RGB_G', 'RGB_B']
     if not all(c in df.columns for c in cols):
         return pd.DataFrame()
@@ -28,33 +37,14 @@ def compute_normalized_rgb(df: pd.DataFrame) -> pd.DataFrame:
         g_lin = srgb_to_linear_channel(wm['RGB_G'].to_numpy())
         b_lin = srgb_to_linear_channel(wm['RGB_B'].to_numpy())
         denom = r_lin + g_lin + b_lin
-        # Avoid division by zero
         denom = np.where(denom == 0, np.nan, denom)
         r_norm = r_lin / denom
         g_norm = g_lin / denom
         b_norm = b_lin / denom
         for i, well_idx in enumerate(wm.index):
-            rows.append({
-                'group_id': int(group_id),
-                'well_index': int(well_idx),
-                'color_space': 'RGB',
-                "channel": "R'",
-                'value': float(r_norm[i])
-            })
-            rows.append({
-                'group_id': int(group_id),
-                'well_index': int(well_idx),
-                'color_space': 'RGB',
-                "channel": "G'",
-                'value': float(g_norm[i])
-            })
-            rows.append({
-                'group_id': int(group_id),
-                'well_index': int(well_idx),
-                'color_space': 'RGB',
-                "channel": "B'",
-                'value': float(b_norm[i])
-            })
+            rows.append({'group_id': int(group_id), 'well_index': int(well_idx), 'color_space': 'RGB', 'channel': "R'", 'value': float(r_norm[i])})
+            rows.append({'group_id': int(group_id), 'well_index': int(well_idx), 'color_space': 'RGB', 'channel': "G'", 'value': float(g_norm[i])})
+            rows.append({'group_id': int(group_id), 'well_index': int(well_idx), 'color_space': 'RGB', 'channel': "B'", 'value': float(b_norm[i])})
     return pd.DataFrame(rows)
 
 def compute_normalized_lab(df: pd.DataFrame) -> pd.DataFrame:
@@ -300,22 +290,8 @@ def plot_normalized_all_wells(out_dir: Path):
                     plt.plot(pivot.index, pivot[ch].values, marker='o', linestyle='-', label=label)
                     if label:
                         legend_added.add(ch)
-                # For RGB scaled variant, overlay expected R/Y/B dotted lines per group (water-scaled)
-                if cs == 'RGB' and filename_suffix == 'scaled':
-                    expected = get_expected_compositions('dominant')
-                    comp = expected.get(int(group_id), {'R': 0.33, 'Y': 0.33, 'B': 0.33, 'Water': 0.0})
-                    scale = 1.0 - comp.get('Water', 0.0)
-                    r0 = comp['R'] * scale
-                    y0 = comp['Y'] * scale
-                    b0 = comp['B'] * scale
-                    xmin = pivot.index.min() if len(pivot.index) else None
-                    xmax = pivot.index.max() if len(pivot.index) else None
-                    if xmin is not None and xmax is not None:
-                        plt.hlines([r0], xmin=xmin, xmax=xmax, colors='r', linestyles='dotted', label=None)
-                        plt.hlines([y0], xmin=xmin, xmax=xmax, colors='g', linestyles='dotted', label=None)
-                        plt.hlines([b0], xmin=xmin, xmax=xmax, colors='b', linestyles='dotted', label=None)
-                # For RGB sum variant, overlay expected R/Y/B dotted lines per group (water-scaled)
-                if cs == 'RGB' and filename_suffix == 'sum':
+                # Overlay expected lines for all color spaces and variants (water-scaled)
+                if filename_suffix in ('scaled', 'sum'):
                     expected = get_expected_compositions('dominant')
                     comp = expected.get(int(group_id), {'R': 0.33, 'Y': 0.33, 'B': 0.33, 'Water': 0.0})
                     scale = 1.0 - comp.get('Water', 0.0)
