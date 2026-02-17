@@ -216,14 +216,14 @@ def write_normalized_outputs(df: pd.DataFrame, out_dir: Path):
                 plt.ylabel("Normalized channel value")
                 plt.ylim(0, 1)
                 plt.grid(True, alpha=0.3)
-                # Overlay expected R/Y/B dotted lines for RGB normalized (scaled)
+                # Overlay expected R/Y/B dotted lines for RGB normalized (scaled) — water-scaled
                 if cs == 'RGB':
                     expected = get_expected_compositions('dominant')
-                    comp = expected.get(int(group_id), {'R': 0.33, 'Y': 0.33, 'B': 0.33})
-                    # Use raw expected fractions for R/Y/B
-                    r0 = comp['R']
-                    y0 = comp['Y']
-                    b0 = comp['B']
+                    comp = expected.get(int(group_id), {'R': 0.33, 'Y': 0.33, 'B': 0.33, 'Water': 0.0})
+                    scale = 1.0 - comp.get('Water', 0.0)
+                    r0 = comp['R'] * scale
+                    y0 = comp['Y'] * scale
+                    b0 = comp['B'] * scale
                     xmin = pivot.index.min() if len(pivot.index) else None
                     xmax = pivot.index.max() if len(pivot.index) else None
                     if xmin is not None and xmax is not None:
@@ -245,6 +245,20 @@ def write_normalized_outputs(df: pd.DataFrame, out_dir: Path):
                 plt.ylabel("Sum-normalized channel fraction")
                 plt.ylim(0, 1)
                 plt.grid(True, alpha=0.3)
+                # Overlay expected lines for RGB sum-normalized — water-scaled
+                if cs == 'RGB':
+                    expected = get_expected_compositions('dominant')
+                    comp = expected.get(int(group_id), {'R': 0.33, 'Y': 0.33, 'B': 0.33, 'Water': 0.0})
+                    scale = 1.0 - comp.get('Water', 0.0)
+                    r0 = comp['R'] * scale
+                    y0 = comp['Y'] * scale
+                    b0 = comp['B'] * scale
+                    xmin = pivot.index.min() if len(pivot.index) else None
+                    xmax = pivot.index.max() if len(pivot.index) else None
+                    if xmin is not None and xmax is not None:
+                        plt.hlines([r0], xmin=xmin, xmax=xmax, colors='r', linestyles='dotted', label='R0')
+                        plt.hlines([y0], xmin=xmin, xmax=xmax, colors='g', linestyles='dotted', label='Y0')
+                        plt.hlines([b0], xmin=xmin, xmax=xmax, colors='b', linestyles='dotted', label='B0')
                 plt.legend(fontsize=9)
                 plt.tight_layout()
                 out_png = out_dir / f"trend_group_{group_id}_{cs}_normalized_sum.png"
@@ -286,15 +300,28 @@ def plot_normalized_all_wells(out_dir: Path):
                     plt.plot(pivot.index, pivot[ch].values, marker='o', linestyle='-', label=label)
                     if label:
                         legend_added.add(ch)
-                # For RGB scaled variant, overlay expected R/Y/B dotted lines per group
+                # For RGB scaled variant, overlay expected R/Y/B dotted lines per group (water-scaled)
                 if cs == 'RGB' and filename_suffix == 'scaled':
-                    # Expected compositions (dominant set)
                     expected = get_expected_compositions('dominant')
-                    comp = expected.get(int(group_id), {'R': 0.33, 'Y': 0.33, 'B': 0.33})
-                    # Use raw expected fractions for R/Y/B
-                    r0 = comp['R']
-                    y0 = comp['Y']
-                    b0 = comp['B']
+                    comp = expected.get(int(group_id), {'R': 0.33, 'Y': 0.33, 'B': 0.33, 'Water': 0.0})
+                    scale = 1.0 - comp.get('Water', 0.0)
+                    r0 = comp['R'] * scale
+                    y0 = comp['Y'] * scale
+                    b0 = comp['B'] * scale
+                    xmin = pivot.index.min() if len(pivot.index) else None
+                    xmax = pivot.index.max() if len(pivot.index) else None
+                    if xmin is not None and xmax is not None:
+                        plt.hlines([r0], xmin=xmin, xmax=xmax, colors='r', linestyles='dotted', label=None)
+                        plt.hlines([y0], xmin=xmin, xmax=xmax, colors='g', linestyles='dotted', label=None)
+                        plt.hlines([b0], xmin=xmin, xmax=xmax, colors='b', linestyles='dotted', label=None)
+                # For RGB sum variant, overlay expected R/Y/B dotted lines per group (water-scaled)
+                if cs == 'RGB' and filename_suffix == 'sum':
+                    expected = get_expected_compositions('dominant')
+                    comp = expected.get(int(group_id), {'R': 0.33, 'Y': 0.33, 'B': 0.33, 'Water': 0.0})
+                    scale = 1.0 - comp.get('Water', 0.0)
+                    r0 = comp['R'] * scale
+                    y0 = comp['Y'] * scale
+                    b0 = comp['B'] * scale
                     xmin = pivot.index.min() if len(pivot.index) else None
                     xmax = pivot.index.max() if len(pivot.index) else None
                     if xmin is not None and xmax is not None:
@@ -458,14 +485,20 @@ def compute_normalized_rgb_error(df: pd.DataFrame, out_dir: Path, expected_set: 
         r_norm = wm['RGB_R'] / sums
         g_norm = wm['RGB_G'] / sums
         b_norm = wm['RGB_B'] / sums
-        # Expected normalized fractions based on composition volumes (R, Y->G, B)
-        comp = expected.get(int(group_id), {'R': 0.33, 'Y': 0.33, 'B': 0.33})
-        # Use raw expected fractions (include Water implicitly in total mix)
-        r0 = comp['R']
-        g0 = comp['Y']
-        b0 = comp['B']
-        # Euclidean error per well between normalized measured and expected
-        err = np.sqrt((r_norm - r0)**2 + (g_norm - g0)**2 + (b_norm - b0)**2)
+        # Expected fractions
+        comp = expected.get(int(group_id), {'R': 0.33, 'Y': 0.33, 'B': 0.33, 'Water': 0.0})
+        # For error metrics, use dye-only normalized expectations (exclude water)
+        total_dye = comp['R'] + comp['Y'] + comp['B']
+        r0_err = comp['R'] / total_dye if total_dye else np.nan
+        g0_err = comp['Y'] / total_dye if total_dye else np.nan
+        b0_err = comp['B'] / total_dye if total_dye else np.nan
+        # For plotting overlays, use water-scaled absolute dye fractions
+        scale = 1.0 - comp.get('Water', 0.0)
+        r0_line = comp['R'] * scale
+        g0_line = comp['Y'] * scale
+        b0_line = comp['B'] * scale
+        # Euclidean error per well between normalized measured and normalized expected (dye-only)
+        err = np.sqrt((r_norm - r0_err)**2 + (g_norm - g0_err)**2 + (b_norm - b0_err)**2)
         # Collect rows
         for well_idx in wm.index:
             rows.append({
@@ -474,9 +507,9 @@ def compute_normalized_rgb_error(df: pd.DataFrame, out_dir: Path, expected_set: 
                 'r_norm': float(r_norm.loc[well_idx]),
                 'g_norm': float(g_norm.loc[well_idx]),
                 'b_norm': float(b_norm.loc[well_idx]),
-                'r0': float(r0),
-                'g0': float(g0),
-                'b0': float(b0),
+                'r0': float(r0_err),
+                'g0': float(g0_err),
+                'b0': float(b0_err),
                 'rgb_error': float(err.loc[well_idx])
             })
         # Plot normalized RGB with expected lines per group
@@ -484,10 +517,10 @@ def compute_normalized_rgb_error(df: pd.DataFrame, out_dir: Path, expected_set: 
         plt.plot(wm.index, r_norm.values, marker='o', linestyle='-', label=f"R' (mean)")
         plt.plot(wm.index, g_norm.values, marker='o', linestyle='-', label=f"G' (mean)")
         plt.plot(wm.index, b_norm.values, marker='o', linestyle='-', label=f"B' (mean)")
-        # Expected horizontal lines
-        plt.hlines([r0], xmin=wm.index.min(), xmax=wm.index.max(), colors='r', linestyles='dotted', label=f"R0={r0:.2f}")
-        plt.hlines([g0], xmin=wm.index.min(), xmax=wm.index.max(), colors='g', linestyles='dotted', label=f"Y0={g0:.2f}")
-        plt.hlines([b0], xmin=wm.index.min(), xmax=wm.index.max(), colors='b', linestyles='dotted', label=f"B0={b0:.2f}")
+        # Expected horizontal lines (water-scaled)
+        plt.hlines([r0_line], xmin=wm.index.min(), xmax=wm.index.max(), colors='r', linestyles='dotted', label=f"R0={r0_line:.2f}")
+        plt.hlines([g0_line], xmin=wm.index.min(), xmax=wm.index.max(), colors='g', linestyles='dotted', label=f"Y0={g0_line:.2f}")
+        plt.hlines([b0_line], xmin=wm.index.min(), xmax=wm.index.max(), colors='b', linestyles='dotted', label=f"B0={b0_line:.2f}")
         avg_err = float(err.mean()) if len(err) else np.nan
         plt.title(f"Group {group_id} — RGB normalized (avg error {avg_err:.3f})")
         plt.xlabel("Well index")
