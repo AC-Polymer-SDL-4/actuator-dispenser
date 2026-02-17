@@ -8,7 +8,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from scipy.optimize import nnls
 
-from uncertainty_plot_and_stats import load_measurements
+from uncertainty_plot_and_stats import load_measurements, get_expected_compositions
 
 
 def srgb_to_linear(channel_8bit: np.ndarray) -> np.ndarray:
@@ -22,20 +22,7 @@ def srgb_to_linear(channel_8bit: np.ndarray) -> np.ndarray:
     return L
 
 
-def get_expected_compositions(expected_set: str) -> Dict[int, Dict[str, float]]:
-    if expected_set == 'original':
-        return {
-            1: {'R': 0.3, 'Y': 0.3, 'B': 0.3, 'Water': 0.1},
-            2: {'R': 0.5, 'Y': 0.2, 'B': 0.2, 'Water': 0.1},
-            3: {'R': 0.2, 'Y': 0.5, 'B': 0.2, 'Water': 0.1},
-            4: {'R': 0.2, 'Y': 0.2, 'B': 0.5, 'Water': 0.1},
-        }
-    return {
-        1: {'R': 0.3, 'Y': 0.3, 'B': 0.3, 'Water': 0.1},
-        2: {'R': 0.7, 'Y': 0.1, 'B': 0.1, 'Water': 0.1},
-        3: {'R': 0.1, 'Y': 0.7, 'B': 0.1, 'Water': 0.1},
-        4: {'R': 0.1, 'Y': 0.1, 'B': 0.7, 'Water': 0.1},
-    }
+# Expected compositions are provided by uncertainty_plot_and_stats.get_expected_compositions
 
 
 def build_dataset(df: pd.DataFrame, expected_set: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
