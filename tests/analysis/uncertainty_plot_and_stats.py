@@ -220,10 +220,10 @@ def write_normalized_outputs(df: pd.DataFrame, out_dir: Path):
                 if cs == 'RGB':
                     expected = get_expected_compositions('dominant')
                     comp = expected.get(int(group_id), {'R': 0.33, 'Y': 0.33, 'B': 0.33})
-                    total = comp['R'] + comp['Y'] + comp['B']
-                    r0 = comp['R'] / total if total else np.nan
-                    y0 = comp['Y'] / total if total else np.nan
-                    b0 = comp['B'] / total if total else np.nan
+                    # Use raw expected fractions for R/Y/B
+                    r0 = comp['R']
+                    y0 = comp['Y']
+                    b0 = comp['B']
                     xmin = pivot.index.min() if len(pivot.index) else None
                     xmax = pivot.index.max() if len(pivot.index) else None
                     if xmin is not None and xmax is not None:
@@ -291,10 +291,10 @@ def plot_normalized_all_wells(out_dir: Path):
                     # Expected compositions (dominant set)
                     expected = get_expected_compositions('dominant')
                     comp = expected.get(int(group_id), {'R': 0.33, 'Y': 0.33, 'B': 0.33})
-                    total = comp['R'] + comp['Y'] + comp['B']
-                    r0 = comp['R'] / total if total else np.nan
-                    y0 = comp['Y'] / total if total else np.nan
-                    b0 = comp['B'] / total if total else np.nan
+                    # Use raw expected fractions for R/Y/B
+                    r0 = comp['R']
+                    y0 = comp['Y']
+                    b0 = comp['B']
                     xmin = pivot.index.min() if len(pivot.index) else None
                     xmax = pivot.index.max() if len(pivot.index) else None
                     if xmin is not None and xmax is not None:
@@ -460,10 +460,10 @@ def compute_normalized_rgb_error(df: pd.DataFrame, out_dir: Path, expected_set: 
         b_norm = wm['RGB_B'] / sums
         # Expected normalized fractions based on composition volumes (R, Y->G, B)
         comp = expected.get(int(group_id), {'R': 0.33, 'Y': 0.33, 'B': 0.33})
-        total = comp['R'] + comp['Y'] + comp['B']
-        r0 = comp['R'] / total if total else np.nan
-        g0 = comp['Y'] / total if total else np.nan
-        b0 = comp['B'] / total if total else np.nan
+        # Use raw expected fractions (include Water implicitly in total mix)
+        r0 = comp['R']
+        g0 = comp['Y']
+        b0 = comp['B']
         # Euclidean error per well between normalized measured and expected
         err = np.sqrt((r_norm - r0)**2 + (g_norm - g0)**2 + (b_norm - b0)**2)
         # Collect rows
