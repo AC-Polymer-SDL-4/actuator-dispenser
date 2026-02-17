@@ -10,9 +10,23 @@ Notes:
 - Expected compositions are centralized in `uncertainty_plot_and_stats.get_expected_compositions()`.
 - RGB normalization uses sRGB gamma decode to linear-light before computing fractions.
 
-Deprecated helpers were removed or stubbed to reduce redundancy. Use the main script and validators above for routine analysis.
+## Camera sRGB Check
+Use `camera_srgb_check.py` to verify the camera delivers 8‑bit, 3‑channel frames and to estimate whether frames are sRGB‑like gamma coded.
 
-Deprecated:
-- `camera_srgb_check.py` (stub): Use inline OpenCV snippets for occasional camera diagnostics.
-- `compare_linear_vs_raw_normalization.py` (stub): RGB normalization and error metrics are available in the main script.
-- `check_normalized_summary.py` (stub): Use `validate_normalized.py` and the main script outputs.
+Example:
+
+```bash
+python tests/analysis/camera_srgb_check.py --device 0 --backend dshow --width 1280 --height 720
+```
+
+What it does:
+- Captures a frame, checks `uint8` dtype and 3‑channel shape.
+- Records capture properties (width/height/fps/FourCC/convert_rgb).
+- Saves a sample PNG and a text report under `output/cnc_camera_test/<timestamp>/camera_srgb_check/`.
+- Compares luminance under linear vs sRGB decode vs pure gamma=2.2; a ratio (MSE_gamma22/MSE_linear) < 0.6 suggests sRGB‑like gamma behavior.
+
+Notes:
+- On Windows, `--backend dshow` typically yields stable capture of BGR8 frames.
+- If you want to also save the raw numpy array, add `--save-npy`.
+
+Deprecated helpers were removed to reduce redundancy. Use the main script and validators above for routine analysis.

@@ -8,6 +8,11 @@ import matplotlib.pyplot as plt
 from scipy import stats
 
 # --- Normalization helpers ---
+# NOTE (2026-02-17): Empirical verification using tests/analysis/camera_srgb_check.py
+# on the capture pipeline (Windows, DirectShow, FourCC=YUY2, convert_rgb=1)
+# indicates frames are sRGB gamma-encoded (ratio_gamma22_to_linear ≈ 0.000).
+# Therefore, RGB values stored in workflow CSVs are sRGB channel means.
+# Decode to linear-light before any proportional mixing or normalization.
 
 def srgb_to_linear_channel(v: np.ndarray) -> np.ndarray:
     """Convert sRGB channel values to linear-light.
@@ -24,7 +29,11 @@ def srgb_to_linear_channel(v: np.ndarray) -> np.ndarray:
     return out
 
 def compute_normalized_rgb(df: pd.DataFrame) -> pd.DataFrame:
-    """Normalize RGB using linearized sRGB fractions R', G', B'."""
+    """Normalize RGB using linearized sRGB fractions R', G', B'.
+
+    Assumes input RGB columns are sRGB-coded channel means (uint8 range),
+    so we first decode to linear-light via srgb_to_linear_channel.
+    """
     cols = ['RGB_R', 'RGB_G', 'RGB_B']
     if not all(c in df.columns for c in cols):
         return pd.DataFrame()
@@ -169,15 +178,14 @@ def write_normalized_outputs(df: pd.DataFrame, out_dir: Path):
     rgb_n = compute_normalized_rgb(df)
     lab_scaled = compute_normalized_lab(df)
     hsv_scaled = compute_normalized_hsv(df)
-    lab_sum = compute_sum_normalized_lab(df)
-    hsv_sum = compute_sum_normalized_hsv(df)
-    variants = [rgb_n, lab_scaled, hsv_scaled, lab_sum, hsv_sum]
+    # Removed legacy sum-normalized variants as they are incorrect for LAB/HSV
+    variants = [rgb_n, lab_scaled, hsv_scaled]
     all_n = pd.concat([x for x in variants if not x.empty], ignore_index=True) if any((not x.empty) for x in variants) else pd.DataFrame()
     if all_n.empty:
         return None
     out_csv = out_dir / "normalized_channels.csv"
     all_n.to_csv(out_csv, index=False)
-    # Per-group plots: separate scaled vs sum-normalized variants
+    # Per-group plots
     for cs in ['RGB', 'LAB', 'HSV']:
         cs_df = all_n[all_n['color_space'] == cs]
         if cs_df.empty:
@@ -186,22 +194,19 @@ def write_normalized_outputs(df: pd.DataFrame, out_dir: Path):
             g = cs_df[cs_df['group_id'] == group_id]
             pivot = g.pivot(index='well_index', columns='channel', values='value').sort_index()
             import matplotlib.pyplot as plt
-            # Determine channel sets
+            # Determine channel sets (scaled only)
             if cs == 'LAB':
-                scaled_cols = [c for c in pivot.columns if c in {"L'", "C'", "h'"}]
-                sum_cols = [c for c in pivot.columns if c.endswith("_sum")]
+                cols = [c for c in pivot.columns if c in {"L'", "C'", "h'"}]
             elif cs == 'HSV':
-                scaled_cols = [c for c in pivot.columns if c in {"H'", "S'", "V'"}]
-                sum_cols = [c for c in pivot.columns if c.endswith("_sum")]
-            else:  # RGB has only scaled normalized
-                scaled_cols = [c for c in pivot.columns if c in {"R'", "G'", "B'"}]
-                sum_cols = []
+                cols = [c for c in pivot.columns if c in {"H'", "S'", "V'"}]
+            else:  # RGB
+                cols = [c for c in pivot.columns if c in {"R'", "G'", "B'"}]
             # Plot scaled variant
-            if scaled_cols:
+            if cols:
                 plt.figure(figsize=(9, 5))
-                for ch in scaled_cols:
+                for ch in cols:
                     plt.plot(pivot.index, pivot[ch].values, marker='o', linestyle='-', label=ch)
-                plt.title(f"Group {group_id} — {cs} normalized (scaled)")
+                plt.title(f"Group {group_id} — {cs} normalized")
                 plt.xlabel("Well index")
                 plt.ylabel("Normalized channel value")
                 plt.ylim(0, 1)
@@ -221,45 +226,16 @@ def write_normalized_outputs(df: pd.DataFrame, out_dir: Path):
                     plt.hlines([b0], xmin=xmin, xmax=xmax, colors='b', linestyles='dotted', label='B0')
                 plt.legend(fontsize=9)
                 plt.tight_layout()
-                out_png = out_dir / f"trend_group_{group_id}_{cs}_normalized_scaled.png"
-                plt.savefig(out_png, dpi=150)
-                plt.close()
-            # Plot sum-normalized variant
-            if sum_cols:
-                plt.figure(figsize=(9, 5))
-                for ch in sum_cols:
-                    plt.plot(pivot.index, pivot[ch].values, marker='o', linestyle='-', label=ch)
-                plt.title(f"Group {group_id} — {cs} normalized (sum)")
-                plt.xlabel("Well index")
-                plt.ylabel("Sum-normalized channel fraction")
-                plt.ylim(0, 1)
-                plt.grid(True, alpha=0.3)
-                # Overlay expected dotted lines (water-scaled) for all color spaces — sum variant
-                expected = get_expected_compositions('dominant')
-                comp = expected.get(int(group_id), {'R': 0.33, 'Y': 0.33, 'B': 0.33, 'Water': 0.0})
-                scale = 1.0 - comp.get('Water', 0.0)
-                r0 = comp['R'] * scale
-                y0 = comp['Y'] * scale
-                b0 = comp['B'] * scale
-                xmin = pivot.index.min() if len(pivot.index) else None
-                xmax = pivot.index.max() if len(pivot.index) else None
-                if xmin is not None and xmax is not None:
-                    plt.hlines([r0], xmin=xmin, xmax=xmax, colors='r', linestyles='dotted', label='R0')
-                    plt.hlines([y0], xmin=xmin, xmax=xmax, colors='g', linestyles='dotted', label='Y0')
-                    plt.hlines([b0], xmin=xmin, xmax=xmax, colors='b', linestyles='dotted', label='B0')
-                plt.legend(fontsize=9)
-                plt.tight_layout()
-                out_png = out_dir / f"trend_group_{group_id}_{cs}_normalized_sum.png"
+                out_png = out_dir / f"trend_group_{group_id}_{cs}_normalized.png"
                 plt.savefig(out_png, dpi=150)
                 plt.close()
     return out_csv
 
 def plot_normalized_all_wells(out_dir: Path):
-    """Create combined normalized plots across all wells, separated by variant.
+    """Create combined normalized plots across all wells.
 
     Produces per color space:
-    - trend_{CS}_normalized_scaled.png (e.g., LAB: L', C', h')
-    - trend_{CS}_normalized_sum.png (e.g., LAB: L'_sum, A'_sum, B'_sum)
+    - trend_{CS}_normalized.png (e.g., LAB: L', C', h')
     """
     norm_path = out_dir / "normalized_channels.csv"
     if not norm_path.exists():
@@ -271,9 +247,8 @@ def plot_normalized_all_wells(out_dir: Path):
         if cs_df.empty:
             continue
         import matplotlib.pyplot as plt
-        # Build two subsets: scaled and sum-normalized
-        # Determine channel names to plot for each variant by inspecting union across groups
-        def _plot_variant(sub_df, title_suffix, y_label, filename_suffix, channels_filter):
+        # Only plot scaled variants (sum-normalized removed as incorrect)
+        def _plot_scaled(sub_df, cs):
             if sub_df.empty:
                 return
             groups = sorted(sub_df['group_id'].unique()) if 'group_id' in sub_df.columns else []
@@ -282,55 +257,45 @@ def plot_normalized_all_wells(out_dir: Path):
             for group_id in groups:
                 g = sub_df[sub_df['group_id'] == group_id]
                 pivot = g.pivot(index='well_index', columns='channel', values='value').sort_index()
-                cols = [c for c in pivot.columns if channels_filter(c)]
+                # Scaled channels
+                if cs == 'LAB':
+                    cols = [c for c in pivot.columns if c in {"L'", "C'", "h'"}]
+                elif cs == 'HSV':
+                    cols = [c for c in pivot.columns if c in {"H'", "S'", "V'"}]
+                else:  # RGB
+                    cols = [c for c in pivot.columns if c in {"R'", "G'", "B'"}]
                 for ch in cols:
                     label = ch if ch not in legend_added else None
                     plt.plot(pivot.index, pivot[ch].values, marker='o', linestyle='-', label=label)
                     if label:
                         legend_added.add(ch)
-                # Overlay expected lines for all color spaces and variants (water-scaled)
-                if filename_suffix in ('scaled', 'sum'):
-                    expected = get_expected_compositions('dominant')
-                    comp = expected.get(int(group_id), {'R': 0.33, 'Y': 0.33, 'B': 0.33, 'Water': 0.0})
-                    scale = 1.0 - comp.get('Water', 0.0)
-                    r0 = comp['R'] * scale
-                    y0 = comp['Y'] * scale
-                    b0 = comp['B'] * scale
-                    xmin = pivot.index.min() if len(pivot.index) else None
-                    xmax = pivot.index.max() if len(pivot.index) else None
-                    if xmin is not None and xmax is not None:
-                        plt.hlines([r0], xmin=xmin, xmax=xmax, colors='r', linestyles='dotted', label=None)
-                        plt.hlines([y0], xmin=xmin, xmax=xmax, colors='g', linestyles='dotted', label=None)
-                        plt.hlines([b0], xmin=xmin, xmax=xmax, colors='b', linestyles='dotted', label=None)
-            # Group boundary separators
-            try:
-                all_idx = sorted(sub_df['well_index'].unique())
-                if len(all_idx) >= 24:
-                    for x in [5.5, 11.5, 17.5]:
-                        plt.axvline(x=x, color='k', linestyle=':', alpha=0.2)
-            except Exception:
-                pass
-            plt.title(f"{cs} normalized — all wells ({title_suffix})")
+                # Overlay expected lines (water-scaled)
+                expected = get_expected_compositions('dominant')
+                comp = expected.get(int(group_id), {'R': 0.33, 'Y': 0.33, 'B': 0.33, 'Water': 0.0})
+                scale = 1.0 - comp.get('Water', 0.0)
+                r0 = comp['R'] * scale
+                y0 = comp['Y'] * scale
+                b0 = comp['B'] * scale
+                xmin = pivot.index.min() if len(pivot.index) else None
+                xmax = pivot.index.max() if len(pivot.index) else None
+                if xmin is not None and xmax is not None:
+                    plt.hlines([r0], xmin=xmin, xmax=xmax, colors='r', linestyles='dotted', label='R0' if 'R0' not in legend_added else None)
+                    plt.hlines([y0], xmin=xmin, xmax=xmax, colors='g', linestyles='dotted', label='Y0' if 'Y0' not in legend_added else None)
+                    plt.hlines([b0], xmin=xmin, xmax=xmax, colors='b', linestyles='dotted', label='B0' if 'B0' not in legend_added else None)
+                    legend_added.update(['R0', 'Y0', 'B0'])
+            plt.title(f"{cs} Normalized Across All Wells")
             plt.xlabel("Well index")
-            plt.ylabel(y_label)
+            plt.ylabel("Normalized value")
             plt.ylim(0, 1)
             plt.grid(True, alpha=0.3)
             plt.legend(fontsize=9)
             plt.tight_layout()
-            out_png = out_dir / f"trend_{cs}_normalized_{filename_suffix}.png"
+            out_png = out_dir / f"trend_{cs}_normalized.png"
             plt.savefig(out_png, dpi=150)
             plt.close()
             made.append(out_png)
-
-        # Scaled variant
-        if cs == 'LAB':
-            _plot_variant(cs_df, 'scaled', 'Normalized channel value', 'scaled', lambda c: c in {"L'", "C'", "h'"})
-            _plot_variant(cs_df, 'sum', 'Sum-normalized channel fraction', 'sum', lambda c: c.endswith('_sum'))
-        elif cs == 'HSV':
-            _plot_variant(cs_df, 'scaled', 'Normalized channel value', 'scaled', lambda c: c in {"H'", "S'", "V'"})
-            _plot_variant(cs_df, 'sum', 'Sum-normalized channel fraction', 'sum', lambda c: c.endswith('_sum'))
-        else:  # RGB only scaled normalized
-            _plot_variant(cs_df, 'scaled', 'Normalized channel value', 'scaled', lambda c: c in {"R'", "G'", "B'"})
+        
+        _plot_scaled(cs_df, cs)
     return made
 
 
