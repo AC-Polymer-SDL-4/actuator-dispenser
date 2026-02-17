@@ -216,6 +216,20 @@ def write_normalized_outputs(df: pd.DataFrame, out_dir: Path):
                 plt.ylabel("Normalized channel value")
                 plt.ylim(0, 1)
                 plt.grid(True, alpha=0.3)
+                # Overlay expected R/Y/B dotted lines for RGB normalized (scaled)
+                if cs == 'RGB':
+                    expected = get_expected_compositions('dominant')
+                    comp = expected.get(int(group_id), {'R': 0.33, 'Y': 0.33, 'B': 0.33})
+                    total = comp['R'] + comp['Y'] + comp['B']
+                    r0 = comp['R'] / total if total else np.nan
+                    y0 = comp['Y'] / total if total else np.nan
+                    b0 = comp['B'] / total if total else np.nan
+                    xmin = pivot.index.min() if len(pivot.index) else None
+                    xmax = pivot.index.max() if len(pivot.index) else None
+                    if xmin is not None and xmax is not None:
+                        plt.hlines([r0], xmin=xmin, xmax=xmax, colors='r', linestyles='dotted', label='R0')
+                        plt.hlines([y0], xmin=xmin, xmax=xmax, colors='g', linestyles='dotted', label='Y0')
+                        plt.hlines([b0], xmin=xmin, xmax=xmax, colors='b', linestyles='dotted', label='B0')
                 plt.legend(fontsize=9)
                 plt.tight_layout()
                 out_png = out_dir / f"trend_group_{group_id}_{cs}_normalized_scaled.png"
