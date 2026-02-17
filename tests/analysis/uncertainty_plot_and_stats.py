@@ -272,6 +272,21 @@ def plot_normalized_all_wells(out_dir: Path):
                     plt.plot(pivot.index, pivot[ch].values, marker='o', linestyle='-', label=label)
                     if label:
                         legend_added.add(ch)
+                # For RGB scaled variant, overlay expected R/Y/B dotted lines per group
+                if cs == 'RGB' and filename_suffix == 'scaled':
+                    # Expected compositions (dominant set)
+                    expected = get_expected_compositions('dominant')
+                    comp = expected.get(int(group_id), {'R': 0.33, 'Y': 0.33, 'B': 0.33})
+                    total = comp['R'] + comp['Y'] + comp['B']
+                    r0 = comp['R'] / total if total else np.nan
+                    y0 = comp['Y'] / total if total else np.nan
+                    b0 = comp['B'] / total if total else np.nan
+                    xmin = pivot.index.min() if len(pivot.index) else None
+                    xmax = pivot.index.max() if len(pivot.index) else None
+                    if xmin is not None and xmax is not None:
+                        plt.hlines([r0], xmin=xmin, xmax=xmax, colors='r', linestyles='dotted', label=None)
+                        plt.hlines([y0], xmin=xmin, xmax=xmax, colors='g', linestyles='dotted', label=None)
+                        plt.hlines([b0], xmin=xmin, xmax=xmax, colors='b', linestyles='dotted', label=None)
             # Group boundary separators
             try:
                 all_idx = sorted(sub_df['well_index'].unique())
@@ -456,9 +471,9 @@ def compute_normalized_rgb_error(df: pd.DataFrame, out_dir: Path, expected_set: 
         plt.plot(wm.index, g_norm.values, marker='o', linestyle='-', label=f"G' (mean)")
         plt.plot(wm.index, b_norm.values, marker='o', linestyle='-', label=f"B' (mean)")
         # Expected horizontal lines
-        plt.hlines([r0], xmin=wm.index.min(), xmax=wm.index.max(), colors='r', linestyles='dashed', label=f"R0={r0:.2f}")
-        plt.hlines([g0], xmin=wm.index.min(), xmax=wm.index.max(), colors='g', linestyles='dashed', label=f"G0={g0:.2f}")
-        plt.hlines([b0], xmin=wm.index.min(), xmax=wm.index.max(), colors='b', linestyles='dashed', label=f"B0={b0:.2f}")
+        plt.hlines([r0], xmin=wm.index.min(), xmax=wm.index.max(), colors='r', linestyles='dotted', label=f"R0={r0:.2f}")
+        plt.hlines([g0], xmin=wm.index.min(), xmax=wm.index.max(), colors='g', linestyles='dotted', label=f"Y0={g0:.2f}")
+        plt.hlines([b0], xmin=wm.index.min(), xmax=wm.index.max(), colors='b', linestyles='dotted', label=f"B0={b0:.2f}")
         avg_err = float(err.mean()) if len(err) else np.nan
         plt.title(f"Group {group_id} — RGB normalized (avg error {avg_err:.3f})")
         plt.xlabel("Well index")
