@@ -120,60 +120,6 @@ def compute_normalized_hsv(df: pd.DataFrame) -> pd.DataFrame:
             rows.append({'group_id': int(group_id), 'well_index': int(well_idx), 'color_space': 'HSV', 'channel': "V'", 'value': float(Vp[i])})
     return pd.DataFrame(rows)
 
-def compute_sum_normalized_lab(df: pd.DataFrame) -> pd.DataFrame:
-    """Legacy LAB sum-normalization retained as a comparative variant.
-
-    Channels: L'_sum, A'_sum, B'_sum where each is the fraction of
-    scaled components (L/100, (A+128)/255, (B+128)/255) divided by their sum.
-    """
-    cols = ['LAB_L', 'LAB_A', 'LAB_B']
-    if not all(c in df.columns for c in cols):
-        return pd.DataFrame()
-    rows = []
-    for group_id in sorted(df['group_id'].unique()):
-        g = df[df['group_id'] == group_id]
-        wm = g.groupby('well_index')[cols].mean().sort_index()
-        L_scaled = wm['LAB_L'].to_numpy() / 100.0
-        A_scaled = (wm['LAB_A'].to_numpy() + 128.0) / 255.0
-        B_scaled = (wm['LAB_B'].to_numpy() + 128.0) / 255.0
-        denom = L_scaled + A_scaled + B_scaled
-        denom = np.where(denom == 0, np.nan, denom)
-        l_sum = L_scaled / denom
-        a_sum = A_scaled / denom
-        b_sum = B_scaled / denom
-        for i, well_idx in enumerate(wm.index):
-            rows.append({'group_id': int(group_id), 'well_index': int(well_idx), 'color_space': 'LAB', 'channel': "L'_sum", 'value': float(l_sum[i])})
-            rows.append({'group_id': int(group_id), 'well_index': int(well_idx), 'color_space': 'LAB', 'channel': "A'_sum", 'value': float(a_sum[i])})
-            rows.append({'group_id': int(group_id), 'well_index': int(well_idx), 'color_space': 'LAB', 'channel': "B'_sum", 'value': float(b_sum[i])})
-    return pd.DataFrame(rows)
-
-def compute_sum_normalized_hsv(df: pd.DataFrame) -> pd.DataFrame:
-    """Legacy HSV sum-normalization retained as a comparative variant.
-
-    Channels: H'_sum, S'_sum, V'_sum where each is the fraction of
-    scaled components (H/360, S/100, V/100) divided by their sum.
-    """
-    cols = ['HSV_H', 'HSV_S', 'HSV_V']
-    if not all(c in df.columns for c in cols):
-        return pd.DataFrame()
-    rows = []
-    for group_id in sorted(df['group_id'].unique()):
-        g = df[df['group_id'] == group_id]
-        wm = g.groupby('well_index')[cols].mean().sort_index()
-        H_scaled = wm['HSV_H'].to_numpy() / 360.0
-        S_scaled = wm['HSV_S'].to_numpy() / 100.0
-        V_scaled = wm['HSV_V'].to_numpy() / 100.0
-        denom = H_scaled + S_scaled + V_scaled
-        denom = np.where(denom == 0, np.nan, denom)
-        h_sum = H_scaled / denom
-        s_sum = S_scaled / denom
-        v_sum = V_scaled / denom
-        for i, well_idx in enumerate(wm.index):
-            rows.append({'group_id': int(group_id), 'well_index': int(well_idx), 'color_space': 'HSV', 'channel': "H'_sum", 'value': float(h_sum[i])})
-            rows.append({'group_id': int(group_id), 'well_index': int(well_idx), 'color_space': 'HSV', 'channel': "S'_sum", 'value': float(s_sum[i])})
-            rows.append({'group_id': int(group_id), 'well_index': int(well_idx), 'color_space': 'HSV', 'channel': "V'_sum", 'value': float(v_sum[i])})
-    return pd.DataFrame(rows)
-
 def write_normalized_outputs(df: pd.DataFrame, out_dir: Path):
     rgb_n = compute_normalized_rgb(df)
     lab_scaled = compute_normalized_lab(df)
