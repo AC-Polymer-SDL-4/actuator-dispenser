@@ -417,6 +417,32 @@ def main():
     except Exception as e:
         logger.error(f"Camera preflight error: {e}")
         raise
+
+    # --- Custom priming: 5x dispense_between (res 7→7), then blowout ---
+    logger.info("Priming: 5x dispense_between from reservoir 7 to 7...")
+    for i in range(5):
+        dispenser.dispense_between(
+            source_location="reservoir_12",
+            source_index=7,
+            dest_location="reservoir_12",
+            dest_index=7,
+            transfer_vol=0.45,
+            mixing_vol=0,
+            num_mixes=0,
+            speed=41000
+        )
+        logger.info(f"Priming repetition {i+1}/5 complete.")
+    logger.info("Performing blowout after priming using condition_needle...")
+    dispenser.condition_needle(
+        source_location="reservoir_12",
+        source_index=7,
+        dest_location="reservoir_12",
+        dest_index=7,
+        num_conditions=1,
+        vol_pipet=0.45,
+        speed=41000
+    )
+    logger.info("Blowout complete.")
     
     # Send Slack notification if using real hardware
     if not dispenser.virtual:
