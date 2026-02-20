@@ -548,3 +548,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# my first 6 wells seem to have lower volumes. this has bee happening stystematically so i dont beleive its random, is there anything in the code that might be causing this?
