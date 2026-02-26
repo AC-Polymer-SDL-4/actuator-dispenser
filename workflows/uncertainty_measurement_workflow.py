@@ -170,7 +170,7 @@ def create_test_mixtures(dispenser, logger):
         logger.info(f"  Group {group_id} (wells {wells_range}): "
                    f"R={composition['R']:.1f}mL, Y={composition['Y']:.1f}mL, "
                    f"B={composition['B']:.1f}mL, Water={composition['Water']:.1f}mL")
-    
+     
     # Create mixtures for each group
     for group_id in range(1, 5):
         composition = test_compositions[group_id]
@@ -418,9 +418,10 @@ def main():
         logger.error(f"Camera preflight error: {e}")
         raise
 
-    # --- Custom priming: 5x dispense_between (res 7→7), then blowout ---
-    logger.info("Priming: 5x dispense_between from reservoir 7 to 7...")
-    for i in range(5):
+    # --- Custom priming: 25x dispense_between (res 7→7), then blowout ---
+    # Actuator needs ~24 cycles to warm up (equivalent to 6 wells × 4 components)
+    logger.info("Priming: 25x dispense_between from reservoir 7 to 7...")
+    for i in range(25):
         dispenser.dispense_between(
             source_location="reservoir_12",
             source_index=7,
@@ -431,7 +432,7 @@ def main():
             num_mixes=0,
             speed=41000
         )
-        logger.info(f"Priming repetition {i+1}/5 complete.")
+        logger.info(f"Priming repetition {i+1}/25 complete.")
     logger.info("Performing blowout after priming using condition_needle...")
     dispenser.condition_needle(
         source_location="reservoir_12",
