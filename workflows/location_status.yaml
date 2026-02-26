@@ -6,9 +6,9 @@ vial_rack: #Array-location
   z_origin: 0
   x_offset: 37 #Measure with caliper
   y_offset: -32 #MEasure with caliper
-  aspirate_height: none
-  dspirate_height: none
-  mixing_height: none
+  aspirate_height: null
+  dispense_height: 0
+  mixing_height: null
 reservoir_12: #Array-location
   num_x: 1 #Rows
   num_y: 12 #Columns

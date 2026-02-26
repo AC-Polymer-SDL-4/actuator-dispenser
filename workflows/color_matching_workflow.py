@@ -61,7 +61,7 @@ MAX_WELLS = 24  # Maximum number of wells on plate (24)
 TARGET_WELL = 0  # Index of well containing the target sample
 RANDOM_SEED = 31
 
-VIRTUAL = False #saves data by default when NOT virtual
+VIRTUAL = True #saves data by default when NOT virtual
 SAVE_DATA = True #option to save data when virtual
 WITHOUT_WATER = True
 SKIP_HOMING = False
@@ -361,12 +361,22 @@ def main():
         
         logger.info("="*50)
         
-        # Pause for user review
-        if VIRTUAL:
+        # Pause for user review - now available in both virtual and real modes
+        logger.info("\n🔍 REVIEW INITIAL CONDITIONS ABOVE 🔍")
+        logger.info("The optimizer has decided on the initial batch conditions.")
+        
+        try:
             response = input("\nPress Enter to continue with these initial conditions, or 'q' to quit: ")
             if response.lower().strip() == 'q':
                 logger.info("Workflow terminated by user")
                 return
+        except KeyboardInterrupt:
+            logger.info("\nWorkflow interrupted by user (Ctrl+C)")
+            return
+        except EOFError:
+            # Handle case where input is not available (e.g., running in non-interactive mode)
+            logger.info("Non-interactive mode detected, continuing automatically...")
+            pass
         
         # Create initial mixtures
         results_data = []
