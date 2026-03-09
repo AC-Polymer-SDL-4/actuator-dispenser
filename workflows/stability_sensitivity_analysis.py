@@ -14,6 +14,7 @@ import os
 from scipy import stats
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import r2_score
+from sklearn.preprocessing import StandardScaler
 from pathlib import Path
 
 # Group compositions (volumes in mL)
@@ -191,6 +192,67 @@ def compute_sensitivity(summary_df, norm_df):
     return pd.DataFrame(results)
 
 
+def compute_standardized_coefficients(summary_df, norm_df):
+    """
+    Compute standardized coefficients from multivariate regression.
+    
+    This is the CORRECT sensitivity metric because dye volumes are correlated
+    (v_R + v_Y + v_B = constant), so single-variable R² is confounded.
+    
+    Standardized coefficients show the independent effect of each dye
+    on each channel, controlling for the other dyes.
+    """
+    results = []
+    scaler = StandardScaler()
+    
+    # Prepare X (volumes) - standardize
+    X = summary_df[['v_R', 'v_Y', 'v_B']].values
+    X_scaled = scaler.fit_transform(X)
+    
+    # Raw channels
+    for channel in RAW_CHANNELS:
+        mean_col = f'{channel}_mean'
+        if mean_col not in summary_df.columns:
+            continue
+        
+        y = summary_df[mean_col].values
+        y_scaled = (y - y.mean()) / y.std() if y.std() > 0 else y - y.mean()
+        
+        model = LinearRegression().fit(X_scaled, y_scaled)
+        
+        results.append({
+            'channel': channel,
+            'channel_type': 'raw',
+            'coef_v_R': model.coef_[0],
+            'coef_v_Y': model.coef_[1],
+            'coef_v_B': model.coef_[2],
+        })
+    
+    # Normalized channels
+    if norm_df is not None:
+        X_norm = norm_df[['v_R', 'v_Y', 'v_B']].values
+        X_norm_scaled = scaler.fit_transform(X_norm)
+        
+        for channel in NORM_CHANNELS:
+            if channel not in norm_df.columns:
+                continue
+            
+            y = norm_df[channel].values
+            y_scaled = (y - y.mean()) / y.std() if y.std() > 0 else y - y.mean()
+            
+            model = LinearRegression().fit(X_norm_scaled, y_scaled)
+            
+            results.append({
+                'channel': channel,
+                'channel_type': 'normalized',
+                'coef_v_R': model.coef_[0],
+                'coef_v_Y': model.coef_[1],
+                'coef_v_B': model.coef_[2],
+            })
+    
+    return pd.DataFrame(results)
+
+
 def plot_stability_by_group(stability_df, output_dir, dataset_name):
     """Plot normalized std for each channel, grouped by group_id."""
     
@@ -323,15 +385,68 @@ def plot_sensitivity_heatmap(sensitivity_df, output_dir, dataset_name):
         ax.set_xlabel('Dye Volume')
         ax.set_ylabel('Channel')
     
+    plt.suptitle(f'Sensitivity Analysis (R² - CONFOUNDED)\n{dataset_name}\nNote: Single-variable R² is confounded because dye volumes are correlated', fontsize=11)
+    plt.tight_layout(rect=[0, 0, 0.92, 0.95])  # Leave space on right for colorbar
     plt.colorbar(im, ax=axes, label='R²', shrink=0.8)
-    plt.suptitle(f'Sensitivity Analysis (R²)\n{dataset_name}', fontsize=12)
-    plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, 'sensitivity_heatmap.png'), dpi=150)
+    plt.savefig(os.path.join(output_dir, 'sensitivity_heatmap_r2_confounded.png'), dpi=150)
+    plt.close()
+
+
+def plot_coefficient_heatmap(coef_df, output_dir, dataset_name):
+    """
+    Plot standardized coefficient heatmap (CORRECT sensitivity metric).
+    
+    Coefficients show the independent effect of each dye on each channel,
+    properly accounting for the correlation between dye volumes.
+    """
+    
+    fig, axes = plt.subplots(1, 2, figsize=(14, 8))
+    
+    for idx, (ch_type, ax) in enumerate([('raw', axes[0]), ('normalized', axes[1])]):
+        df = coef_df[coef_df['channel_type'] == ch_type]
+        
+        if len(df) == 0:
+            ax.set_title(f'{ch_type.title()} Channels - No Data')
+            continue
+        
+        channels = df['channel'].tolist()
+        data = df[['coef_v_R', 'coef_v_Y', 'coef_v_B']].values
+        
+        # Use diverging colormap centered at 0
+        im = ax.imshow(data, cmap='RdBu_r', aspect='auto', vmin=-1, vmax=1)
+        
+        ax.set_xticks(range(3))
+        ax.set_xticklabels(['v_R (Red)', 'v_Y (Yellow)', 'v_B (Blue)'])
+        ax.set_yticks(range(len(channels)))
+        ax.set_yticklabels(channels)
+        
+        # Add text annotations
+        for i in range(len(channels)):
+            for j in range(3):
+                val = data[i, j]
+                color = 'white' if abs(val) > 0.5 else 'black'
+                ax.text(j, i, f'{val:.2f}', ha='center', va='center', 
+                       color=color, fontsize=10, fontweight='bold')
+        
+        ax.set_title(f'{ch_type.title()} Channels', fontsize=12)
+        ax.set_xlabel('Dye Volume')
+        ax.set_ylabel('Channel')
+    
+    plt.suptitle(f'Sensitivity Analysis (Standardized Coefficients - CORRECT)\n{dataset_name}\n'
+                 f'+1 = dye increases channel by 1 std, -1 = dye decreases channel by 1 std', 
+                 fontsize=11)
+    
+    # Add colorbar
+    cbar = fig.colorbar(im, ax=axes, shrink=0.8, pad=0.02)
+    cbar.set_label('Standardized Coefficient\n(positive=increases, negative=decreases)')
+    
+    plt.tight_layout(rect=[0, 0, 0.92, 0.95])
+    plt.savefig(os.path.join(output_dir, 'sensitivity_heatmap_coefficients.png'), dpi=150)
     plt.close()
 
 
 def plot_sensitivity_bars(sensitivity_df, output_dir, dataset_name):
-    """Plot R² aggregate as bar chart."""
+    """Plot R² aggregate as bar chart (CONFOUNDED - kept for reference)."""
     
     fig, ax = plt.subplots(figsize=(12, 6))
     
@@ -347,8 +462,8 @@ def plot_sensitivity_bars(sensitivity_df, output_dir, dataset_name):
     
     ax.set_yticks(y)
     ax.set_yticklabels(channels)
-    ax.set_xlabel('R² (Aggregate)')
-    ax.set_title(f'Sensitivity Ranking (R² for predicting channel from all dye volumes)\n{dataset_name}')
+    ax.set_xlabel('R² (Aggregate) - CONFOUNDED')
+    ax.set_title(f'Sensitivity Ranking (R² - CONFOUNDED)\n{dataset_name}\nNote: Use coefficient heatmap for correct sensitivity')
     ax.set_xlim(0, 1)
     ax.grid(True, alpha=0.3, axis='x')
     
@@ -364,7 +479,69 @@ def plot_sensitivity_bars(sensitivity_df, output_dir, dataset_name):
     ax.legend(handles=legend_elements, loc='lower right')
     
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, 'sensitivity_ranking.png'), dpi=150)
+    plt.savefig(os.path.join(output_dir, 'sensitivity_ranking_r2_confounded.png'), dpi=150)
+    plt.close()
+
+
+def plot_coefficient_bars(coef_df, output_dir, dataset_name):
+    """
+    Plot sensitivity ranking based on max absolute coefficient (CORRECT metric).
+    
+    Max |coefficient| indicates how strongly each channel responds to ANY dye change.
+    """
+    
+    # Compute max absolute coefficient for each channel
+    coef_df = coef_df.copy()
+    coef_df['max_abs_coef'] = coef_df[['coef_v_R', 'coef_v_Y', 'coef_v_B']].abs().max(axis=1)
+    
+    # Also identify which dye has the max effect
+    def get_max_dye(row):
+        abs_coefs = {'v_R': abs(row['coef_v_R']), 'v_Y': abs(row['coef_v_Y']), 'v_B': abs(row['coef_v_B'])}
+        return max(abs_coefs, key=abs_coefs.get)
+    
+    coef_df['dominant_dye'] = coef_df.apply(get_max_dye, axis=1)
+    
+    fig, ax = plt.subplots(figsize=(12, 8))
+    
+    # Sort by max absolute coefficient
+    df_sorted = coef_df.sort_values('max_abs_coef', ascending=True)
+    
+    channels = df_sorted['channel'].tolist()
+    values = df_sorted['max_abs_coef'].tolist()
+    
+    # Color by dominant dye
+    dye_colors = {'v_R': 'red', 'v_Y': 'gold', 'v_B': 'blue'}
+    colors = [dye_colors[d] for d in df_sorted['dominant_dye']]
+    
+    # Edge color by channel type
+    edge_colors = ['black' if t == 'raw' else 'gray' for t in df_sorted['channel_type']]
+    
+    y = np.arange(len(channels))
+    bars = ax.barh(y, values, color=colors, edgecolor=edge_colors, linewidth=2)
+    
+    ax.set_yticks(y)
+    ax.set_yticklabels(channels)
+    ax.set_xlabel('Max |Coefficient| (sensitivity to dye changes)')
+    ax.set_title(f'Sensitivity Ranking (Max Absolute Coefficient)\n{dataset_name}\nColor = dominant dye, Black edge = raw, Gray edge = normalized')
+    ax.set_xlim(0, 1)
+    ax.grid(True, alpha=0.3, axis='x')
+    
+    # Add value labels with dominant dye
+    for bar, val, dye in zip(bars, values, df_sorted['dominant_dye']):
+        ax.text(val + 0.02, bar.get_y() + bar.get_height()/2, f'{val:.2f} ({dye})',
+               va='center', fontsize=9)
+    
+    # Add legend
+    from matplotlib.patches import Patch
+    legend_elements = [
+        Patch(facecolor='red', label='v_R dominant'),
+        Patch(facecolor='gold', label='v_Y dominant'),
+        Patch(facecolor='blue', label='v_B dominant'),
+    ]
+    ax.legend(handles=legend_elements, loc='lower right')
+    
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, 'sensitivity_ranking_coefficients.png'), dpi=150)
     plt.close()
 
 
@@ -448,14 +625,22 @@ def plot_channel_vs_volume_scatter(summary_df, norm_df, output_dir, dataset_name
             plt.close()
 
 
-def plot_stability_vs_sensitivity(stability_df, sensitivity_df, output_dir, dataset_name):
-    """Plot stability (x-axis, lower=better) vs sensitivity (y-axis, higher=better)."""
+def plot_stability_vs_sensitivity(stability_df, coef_df, output_dir, dataset_name):
+    """
+    Plot stability (x-axis, lower=better) vs sensitivity (y-axis, higher=better).
+    
+    Uses max absolute coefficient as sensitivity metric (CORRECT).
+    """
     
     # Average stability across groups for each channel
     avg_stability = stability_df.groupby(['channel', 'channel_type'])['norm_std'].mean().reset_index()
     
-    # Merge with sensitivity
-    merged = pd.merge(avg_stability, sensitivity_df, on=['channel', 'channel_type'])
+    # Compute max absolute coefficient for sensitivity
+    coef_df = coef_df.copy()
+    coef_df['max_abs_coef'] = coef_df[['coef_v_R', 'coef_v_Y', 'coef_v_B']].abs().max(axis=1)
+    
+    # Merge stability with coefficients
+    merged = pd.merge(avg_stability, coef_df, on=['channel', 'channel_type'])
     
     fig, ax = plt.subplots(figsize=(12, 8))
     
@@ -477,7 +662,7 @@ def plot_stability_vs_sensitivity(stability_df, sensitivity_df, output_dir, data
     for _, row in merged.iterrows():
         channel = row['channel']
         x = row['norm_std']
-        y = row['R2_aggregate']
+        y = row['max_abs_coef']
         
         color = color_map.get(channel, 'black')
         marker = 'o' if row['channel_type'] == 'raw' else '^'
@@ -490,7 +675,7 @@ def plot_stability_vs_sensitivity(stability_df, sensitivity_df, output_dir, data
     
     # Add quadrant lines at median values
     median_x = merged['norm_std'].median()
-    median_y = merged['R2_aggregate'].median()
+    median_y = merged['max_abs_coef'].median()
     ax.axvline(x=median_x, color='gray', linestyle='--', alpha=0.5)
     ax.axhline(y=median_y, color='gray', linestyle='--', alpha=0.5)
     
@@ -505,8 +690,8 @@ def plot_stability_vs_sensitivity(stability_df, sensitivity_df, output_dir, data
             fontsize=10, verticalalignment='bottom', horizontalalignment='left', color='red')
     
     ax.set_xlabel('Stability (std/range) — More Stable →', fontsize=11)
-    ax.set_ylabel('Differentiability (R²) — More Differentiating →', fontsize=11)
-    ax.set_title(f'Channel Quality: Stability vs Differentiability\n{dataset_name}', fontsize=12)
+    ax.set_ylabel('Sensitivity (max |coefficient|) — More Differentiating →', fontsize=11)
+    ax.set_title(f'Channel Quality: Stability vs Sensitivity\n{dataset_name}', fontsize=12)
     ax.grid(True, alpha=0.3)
     
     # Reverse x-axis so lower (better) stability is on the right
@@ -514,7 +699,7 @@ def plot_stability_vs_sensitivity(stability_df, sensitivity_df, output_dir, data
     
     # Set axis limits with some padding - zoom in on the data
     ax.set_xlim(merged['norm_std'].max() * 1.2, 0)
-    y_min = max(0, merged['R2_aggregate'].min() - 0.05)  # Start just below lowest point
+    y_min = max(0, merged['max_abs_coef'].min() - 0.05)  # Start just below lowest point
     ax.set_ylim(y_min, 1.02)
     
     # Add legend for marker types
@@ -554,9 +739,13 @@ def analyze_dataset(dataset_path):
     stability_df = compute_stability_metrics(summary_df, norm_df)
     stability_df.to_csv(os.path.join(output_dir, 'stability_metrics.csv'), index=False)
     
-    print("  Computing sensitivity (R²)...")
+    print("  Computing sensitivity (R² - confounded)...")
     sensitivity_df = compute_sensitivity(summary_df, norm_df)
-    sensitivity_df.to_csv(os.path.join(output_dir, 'sensitivity_r2.csv'), index=False)
+    sensitivity_df.to_csv(os.path.join(output_dir, 'sensitivity_r2_confounded.csv'), index=False)
+    
+    print("  Computing standardized coefficients (CORRECT sensitivity)...")
+    coef_df = compute_standardized_coefficients(summary_df, norm_df)
+    coef_df.to_csv(os.path.join(output_dir, 'sensitivity_coefficients.csv'), index=False)
     
     # Generate plots
     print("  Generating stability plots...")
@@ -565,13 +754,15 @@ def analyze_dataset(dataset_path):
     
     print("  Generating sensitivity plots...")
     plot_sensitivity_heatmap(sensitivity_df, output_dir, dataset_name)
+    plot_coefficient_heatmap(coef_df, output_dir, dataset_name)
     plot_sensitivity_bars(sensitivity_df, output_dir, dataset_name)
+    plot_coefficient_bars(coef_df, output_dir, dataset_name)
     
     print("  Generating scatter plots...")
     plot_channel_vs_volume_scatter(summary_df, norm_df, output_dir, dataset_name)
     
     print("  Generating stability vs sensitivity plot...")
-    plot_stability_vs_sensitivity(stability_df, sensitivity_df, output_dir, dataset_name)
+    plot_stability_vs_sensitivity(stability_df, coef_df, output_dir, dataset_name)
     
     print(f"  Saved to: {output_dir}")
     
@@ -581,11 +772,14 @@ def analyze_dataset(dataset_path):
     for ch, val in avg_stability.items():
         print(f"    {ch}: {val:.4f}")
     
-    print("\n  === SENSITIVITY SUMMARY (higher = better differentiation) ===")
-    for _, row in sensitivity_df.sort_values('R2_aggregate', ascending=False).iterrows():
-        print(f"    {row['channel']}: R²={row['R2_aggregate']:.3f}")
+    print("\n  === SENSITIVITY SUMMARY (Standardized Coefficients) ===")
+    print("  (Positive = dye increases channel, Negative = dye decreases channel)")
+    print(f"  {'Channel':<10} {'v_R':<10} {'v_Y':<10} {'v_B':<10}")
+    print("  " + "-"*40)
+    for _, row in coef_df[coef_df['channel_type'] == 'raw'].iterrows():
+        print(f"  {row['channel']:<10} {row['coef_v_R']:+.2f}      {row['coef_v_Y']:+.2f}      {row['coef_v_B']:+.2f}")
     
-    return stability_df, sensitivity_df
+    return stability_df, sensitivity_df, coef_df
 
 
 if __name__ == "__main__":

@@ -1,6 +1,9 @@
 """
 Color Matching Bayesian Optimization Workflow
 
+BACKUP COPY - Created March 3, 2026
+Original version before adding single-channel and weighted optimization options.
+
 This workflow uses Bayesian optimization to find optimal color mixing ratios
 to match a target color sample. It iteratively creates color mixtures, analyzes
 their RGB values, and optimizes the next batch of experiments.
@@ -61,7 +64,7 @@ MAX_WELLS = 24  # Maximum number of wells on plate (24)
 TARGET_WELL = 0  # Index of well containing the target sample
 RANDOM_SEED = 31
 
-VIRTUAL = False #saves data by default when NOT virtual
+VIRTUAL = True #saves data by default when NOT virtual
 SAVE_DATA = True #option to save data when virtual
 WITHOUT_WATER = True
 SKIP_HOMING = False
@@ -72,42 +75,8 @@ SHOW_CROP = False
 # 'corner' - BayBE's RandomRecommender for more deterministic sampling
 INITIALIZATION_METHOD = 'sobol'  # Options: 'sobol' (default), 'corner'
 
-# =============================================================================
-# OBJECTIVE CONFIGURATION
-# =============================================================================
-# OBJECTIVE_MODE controls how the optimization objective is calculated:
-#   'full_distance' - Minimize Euclidean distance across all channels (default behavior)
-#   'single_channel' - Minimize absolute difference in ONE specific channel
-#
-# Based on sensitivity+stability analysis, the top 3 channels for BO are:
-#   1. HSV_V (Value)     - combined score: 0.971
-#   2. RGB_R (Red)       - combined score: 0.969  
-#   3. HSV_H (Hue)       - combined score: 0.950
-#
-# When OBJECTIVE_MODE = 'single_channel', COLOR_SPACE is automatically set
-# to match the channel's color space (e.g., 'V' -> HSV, 'R' -> RGB)
-# =============================================================================
-OBJECTIVE_MODE = 'full_distance'  # Options: 'full_distance', 'single_channel'
-OBJECTIVE_CHANNEL = 'V'  # Options: 'H', 'S', 'V' (HSV), 'R', 'G', 'B' (RGB), 'L', 'A' (LAB)
-
-# Map channels to their color spaces
-CHANNEL_TO_COLORSPACE = {
-    'H': 'HSV', 'S': 'HSV', 'V': 'HSV',
-    'R': 'RGB', 'G': 'RGB', 'B': 'RGB',
-    'L': 'LAB', 'A': 'LAB',
-}
-
 # Choose color space for matching: 'RGB', 'RGBA', 'HSV', or 'LAB'
-# NOTE: This will be overridden if OBJECTIVE_MODE = 'single_channel'
 COLOR_SPACE = 'LAB'
-
-# Auto-set COLOR_SPACE based on OBJECTIVE_CHANNEL when in single_channel mode
-if OBJECTIVE_MODE == 'single_channel':
-    if OBJECTIVE_CHANNEL.upper() in CHANNEL_TO_COLORSPACE:
-        COLOR_SPACE = CHANNEL_TO_COLORSPACE[OBJECTIVE_CHANNEL.upper()]
-    else:
-        raise ValueError(f"Unknown channel '{OBJECTIVE_CHANNEL}'. Valid options: {list(CHANNEL_TO_COLORSPACE.keys())}")
-
 COLOR_SPACE = COLOR_SPACE.upper() #just to make sure it's in uppercase
 
 # Reservoir mapping
@@ -130,22 +99,10 @@ CONDITION_BEFORE_RINSE = True  #Whether to do a condition step before rinsing (u
 
 # Get workflow name (file name without extension)
 workflow_name = os.path.splitext(os.path.basename(__file__))[0]
+timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
-def get_output_dir():
-    """Generate output directory path based on current settings."""
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    virtual_tag = "_virtual" if VIRTUAL else ""
-    
-    # Add objective mode info to directory name
-    if OBJECTIVE_MODE == 'single_channel':
-        objective_tag = f"_{OBJECTIVE_CHANNEL}"  # e.g., "_V" for single-channel V
-    else:
-        objective_tag = ""
-    
-    return os.path.join("output", workflow_name, f"{timestamp}{virtual_tag}_{COLOR_SPACE}{objective_tag}")
-
-# Default output_dir (will be updated in main() after CLI parsing)
-output_dir = get_output_dir()
+virtual_tag = "_virtual" if VIRTUAL else ""
+output_dir = os.path.join("output", workflow_name, f"{timestamp}{virtual_tag}_{COLOR_SPACE}")
 
 
 def rgb_distance(rgb1, rgb2):
@@ -174,59 +131,16 @@ def lab_distance(lab1, lab2):
         return float('inf')
     return np.sqrt(sum((float(a) - float(b)) ** 2 for a, b in zip(lab1, lab2)))
 
-def single_channel_distance(target_col, sample_col, channel):
-    """
-    Calculate absolute difference in a single color channel.
-    
-    Args:
-        target_col: Target color as dict (e.g., {'H': 25, 'S': 0.6, 'V': 0.7})
-        sample_col: Sample color as dict
-        channel: Channel name (e.g., 'V', 'R', 'H', 'L')
-        
-    Returns:
-        Absolute difference in the specified channel.
-        For Hue (H), uses circular distance (0-360 wraps around).
-    """
-    if target_col is None or sample_col is None:
-        return float('inf')
-    
-    channel = channel.upper()
-    
-    # Get values from dicts
-    target_val = target_col.get(channel)
-    sample_val = sample_col.get(channel)
-    
-    if target_val is None or sample_val is None:
-        raise ValueError(f"Channel '{channel}' not found in color dicts. Available: {list(target_col.keys())}")
-    
-    # Special handling for Hue (circular)
-    if channel == 'H':
-        return hue_distance_deg(float(target_val), float(sample_val))
-    
-    # Standard absolute difference for other channels
-    return abs(float(target_val) - float(sample_val))
-
-def get_color_distance(target_col, sample_col, color_space=COLOR_SPACE, objective_mode=OBJECTIVE_MODE, objective_channel=OBJECTIVE_CHANNEL):
-    """
-    Calculate color distance based on objective mode.
-    
-    In 'full_distance' mode: Returns Euclidean distance across all channels.
-    In 'single_channel' mode: Returns absolute difference in one channel only.
-    """
-    # Single-channel mode: optimize on ONE channel only
-    if objective_mode == 'single_channel':
-        return single_channel_distance(target_col, sample_col, objective_channel)
-    
-    # Full distance mode: use Euclidean distance across all channels
-    target_tuple = tuple(target_col.values())
-    sample_tuple = tuple(sample_col.values())
+def get_color_distance(target_col, sample_col, color_space=COLOR_SPACE):
+    target_col = tuple(target_col.values())
+    sample_col = tuple(sample_col.values())
 
     if color_space == 'RGB' or color_space == 'RGBA':
-        return rgb_distance(target_tuple, sample_tuple)
+        return rgb_distance(target_col, sample_col)
     elif color_space == 'HSV':
-        return hsv_distance(target_tuple, sample_tuple)
+        return hsv_distance(target_col, sample_col)
     elif color_space == 'LAB':
-        return lab_distance(target_tuple, sample_tuple)
+        return lab_distance(target_col, sample_col)
     else:
         return None
 
@@ -339,13 +253,8 @@ def condition_system(dispenser, logger):
 def main():
     """Main color matching workflow."""
     # Use global configuration, possibly overridden by CLI args parsed in __main__
-    global VIRTUAL, SAVE_DATA, WITHOUT_WATER, SKIP_HOMING, OPTIMIZER_TYPE, COLOR_SPACE, output_dir
-    
-    # Regenerate output_dir with updated settings (after CLI parsing)
-    output_dir = get_output_dir()
-    
+    global VIRTUAL, SAVE_DATA, WITHOUT_WATER, SKIP_HOMING, OPTIMIZER_TYPE, COLOR_SPACE
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    virtual_tag = "_virtual" if VIRTUAL else ""
     log_filename = f"color_matching_workflow{virtual_tag}_{timestamp}.log"
 
     # Initialize logging
@@ -388,7 +297,7 @@ def main():
             if COLOR_SPACE == 'RGB':
                 target_color = {'R': 180, 'G': 120, 'B': 80}  # Brownish target
             elif COLOR_SPACE == 'HSV':
-                target_color = {'H': 25, 'S': 60, 'V': 70}  # Brownish in HSV (0-360, 0-100, 0-100 scale)
+                target_color = {'H': 25, 'S': 0.6, 'V': 0.7}  # Brownish in HSV
             elif COLOR_SPACE == 'LAB':
                 target_color = {'L': 50, 'A': 20, 'B': 30}    # Brownish in LAB
             else:
@@ -440,10 +349,6 @@ def main():
         logger.info("="*50)
         logger.info(f"Optimizer: {OPTIMIZER_TYPE}")
         logger.info(f"Random seed: {RANDOM_SEED}")
-        logger.info(f"Objective mode: {OBJECTIVE_MODE}")
-        if OBJECTIVE_MODE == 'single_channel':
-            logger.info(f"Objective channel: {OBJECTIVE_CHANNEL} (optimizing this channel only)")
-        logger.info(f"Color space: {COLOR_SPACE}")
         logger.info(f"Target color ({COLOR_SPACE}): {get_color_str(target_color)}")
         logger.info(f"Initial batch size: {INITIAL_BATCH_SIZE}")
         logger.info("\nInitial mixing recommendations:")
@@ -751,10 +656,6 @@ if __name__ == "__main__":
     parser.add_argument("--color-space", choices=["RGB","RGBA","HSV","LAB"], help="Select color space")
     parser.add_argument("--without-water", action="store_true", help="Disable water component in mixtures")
     parser.add_argument("--show-crop", action="store_true", help="Display the center crop window (blocks until closed)")
-    parser.add_argument("--objective-mode", choices=["full_distance", "single_channel"], 
-                        help="Optimization objective mode")
-    parser.add_argument("--objective-channel", choices=["H","S","V","R","G","B","L","A"],
-                        help="Channel to optimize in single_channel mode (e.g., V, R, H)")
     args = parser.parse_args()
 
     if args.virtual:
@@ -763,13 +664,6 @@ if __name__ == "__main__":
         SKIP_HOMING = True
     if args.optimizer_type:
         OPTIMIZER_TYPE = args.optimizer_type
-    if args.objective_mode:
-        OBJECTIVE_MODE = args.objective_mode
-    if args.objective_channel:
-        OBJECTIVE_CHANNEL = args.objective_channel.upper()
-        # Auto-set color space when channel is specified via CLI
-        if OBJECTIVE_CHANNEL in CHANNEL_TO_COLORSPACE:
-            COLOR_SPACE = CHANNEL_TO_COLORSPACE[OBJECTIVE_CHANNEL]
     if args.color_space:
         COLOR_SPACE = args.color_space.upper()
     if args.without_water:
