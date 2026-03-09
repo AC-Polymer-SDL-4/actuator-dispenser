@@ -9,6 +9,17 @@ vial_rack: #Array-location
   aspirate_height: none
   dispense_height: 0
   mixing_height: none
+vial_rack_12: #Array-location
+  num_x: 3 #Columns
+  num_y: 4 #Rows
+  x_origin: 125 #move the cnc machine with the needle attached, and find the position 
+  y_origin: 93.5
+  z_origin: 0
+  x_offset: -28.5 #Measure with caliper
+  y_offset: -29 #MEasure with caliper
+  aspirate_height: -75
+  dispense_height: 0
+  mixing_height: none
 reservoir_12: #Array-location
   num_x: 1 #Rows
   num_y: 12 #Columns
