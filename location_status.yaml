@@ -19,7 +19,7 @@ vial_rack_12: #Array-location
   y_offset: -29 #MEasure with caliper
   aspirate_height: -75
   dispense_height: 0
-  mixing_height: none
+  mixing_height: -75
 reservoir_12: #Array-location
   num_x: 1 #Rows
   num_y: 12 #Columns
