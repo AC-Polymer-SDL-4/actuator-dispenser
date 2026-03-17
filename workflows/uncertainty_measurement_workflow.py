@@ -69,6 +69,15 @@ RESERVOIRS = {
 SQUARE_SIZE = 60  # Size of crop area for color analysis
 DELAY_BETWEEN_MEASUREMENTS = 0.5  # Delay between replicate photos (seconds)
 
+# Test compositions (mL per well) used in automated mode.
+# Recommended design: three dye-dominant groups + one balanced group.
+TEST_COMPOSITIONS = {
+    1: {'R': 0.6, 'Y': 0.2, 'B': 0.1, 'Water': 0.1},  # Group 1: wells 0-5
+    2: {'R': 0.2, 'Y': 0.6, 'B': 0.1, 'Water': 0.1},  # Group 2: wells 6-11
+    3: {'R': 0.2, 'Y': 0.1, 'B': 0.6, 'Water': 0.1},  # Group 3: wells 12-17
+    4: {'R': 0.3, 'Y': 0.3, 'B': 0.3, 'Water': 0.1},  # Group 4: wells 18-23
+}
+
 # Get workflow name and create output directory
 workflow_name = os.path.splitext(os.path.basename(__file__))[0]
 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -155,14 +164,7 @@ def create_test_mixtures(dispenser, logger):
     """
     logger.info("Creating test mixtures for uncertainty measurement...")
     
-    # Define 4 test compositions (volumes in mL) - MODIFY THESE VALUES AS NEEDED
-    #TODO how the concentrations are chosen
-    test_compositions = {
-        1: {'R': 0.3, 'Y': 0.3, 'B': 0.3, 'Water': 0.1},  # Group 1: wells 0-5
-        2: {'R': 0.7, 'Y': 0.1, 'B': 0.1, 'Water': 0.1},  # Group 2: wells 6-11  
-        3: {'R': 0.1, 'Y': 0.7, 'B': 0.1, 'Water': 0.1},  # Group 3: wells 12-17
-        4: {'R': 0.1, 'Y': 0.1, 'B': 0.7, 'Water': 0.1},  # Group 4: wells 18-23
-    }
+    test_compositions = TEST_COMPOSITIONS
     
     logger.info("Test compositions defined:")
     for group_id, composition in test_compositions.items():
@@ -306,6 +308,20 @@ def save_results(all_measurements: List[Dict], logger):
     
     # Create output directory
     os.makedirs(output_dir, exist_ok=True)
+
+    # Save test composition metadata for downstream analysis
+    composition_rows = []
+    for group_id, composition in TEST_COMPOSITIONS.items():
+        composition_rows.append({
+            'group_id': group_id,
+            'v_R': composition['R'],
+            'v_Y': composition['Y'],
+            'v_B': composition['B'],
+            'v_Water': composition['Water'],
+        })
+    composition_file = os.path.join(output_dir, "composition_map.csv")
+    pd.DataFrame(composition_rows).to_csv(composition_file, index=False)
+    logger.info(f"Composition map saved to {composition_file}")
     
     # Save raw measurements
     measurements_df = pd.DataFrame(all_measurements)

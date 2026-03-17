@@ -1,4 +1,4 @@
--+----#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 Multi-Well Percentage Dispenser GUI
 
@@ -14,6 +14,7 @@ from tkinter import ttk, messagebox, scrolledtext
 import threading
 import sys
 import os
+import random
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -36,19 +37,42 @@ class PercentageDispenseGUI:
         self.workflow_running = False
         
         # Workflow configuration
-        self.VIRTUAL = True
-        self.TOTAL_VOLUME_ML = 2.0
-        self.RESERVOIRS = {
-            'Water': 0,
-            'Red': 1,
-            'Blue': 2,
-            'Yellow': 3,
-            'wash': 4,
-            'waste': 5
-        }
+        self.virtual_mode = tk.BooleanVar(value=True)
+        self.TOTAL_VOLUME_ML = 3.5
+        
+        # Vial mapping variables (which vial index for each function)
+        self.vial_red = tk.IntVar(value=0)
+        self.vial_yellow = tk.IntVar(value=1)
+        self.vial_blue = tk.IntVar(value=2)
+        self.vial_water = tk.IntVar(value=3)
+        self.vial_wash = tk.IntVar(value=4)
+        self.vial_waste = tk.IntVar(value=5)
+        
         self.COLOR_ORDER = ['Water', 'Red', 'Blue', 'Yellow']
         
         self.setup_ui()
+
+    def generate_random_percentages(self):
+        """Generate random Water/Red/Blue/Yellow percentages in 5% increments summing to 100."""
+        units = 20  # 20 * 5% = 100%
+        cut1 = random.randint(0, units)
+        cut2 = random.randint(cut1, units)
+        cut3 = random.randint(cut2, units)
+
+        parts = [
+            cut1,
+            cut2 - cut1,
+            cut3 - cut2,
+            units - cut3,
+        ]
+        random.shuffle(parts)
+
+        return {
+            'water': parts[0] * 5,
+            'red': parts[1] * 5,
+            'blue': parts[2] * 5,
+            'yellow': parts[3] * 5,
+        }
     
     def setup_ui(self):
         """Create the GUI layout."""
@@ -61,16 +85,49 @@ class PercentageDispenseGUI:
                                font=("Arial", 14, "bold"))
         title_label.grid(row=0, column=0, columnspan=4, pady=10)
         
-        # Number of vials selector
-        num_label = ttk.Label(main_frame, text="Number of Vials:")
-        num_label.grid(row=1, column=0, sticky=tk.W, pady=10)
+        # Configuration frame (Virtual mode + Vial mapping)
+        config_frame = ttk.LabelFrame(main_frame, text="Configuration", padding="5")
+        config_frame.grid(row=1, column=0, columnspan=4, sticky=(tk.W, tk.E), pady=10)
         
-        num_spinbox = ttk.Spinbox(main_frame, from_=1, to=12, textvariable=self.num_vials,
+        # Virtual mode checkbox
+        virtual_check = ttk.Checkbutton(config_frame, text="Virtual Mode (no hardware)", 
+                                        variable=self.virtual_mode)
+        virtual_check.grid(row=0, column=0, columnspan=2, sticky=tk.W, pady=5)
+        
+        # Number of vials selector
+        num_label = ttk.Label(config_frame, text="Number of Destination Vials:")
+        num_label.grid(row=0, column=2, sticky=tk.W, padx=(20, 5))
+        
+        num_spinbox = ttk.Spinbox(config_frame, from_=1, to=6, textvariable=self.num_vials,
                                   width=5, command=self.update_vial_inputs)
-        num_spinbox.grid(row=1, column=1, sticky=tk.W, padx=5)
+        num_spinbox.grid(row=0, column=3, sticky=tk.W, padx=5)
+        
+        # Vial mapping frame
+        mapping_frame = ttk.LabelFrame(main_frame, text="Source Vial Mapping (vial_rack_12 indices 0-11)", padding="5")
+        mapping_frame.grid(row=2, column=0, columnspan=4, sticky=(tk.W, tk.E), pady=5)
+        
+        # Row 1: Colors
+        ttk.Label(mapping_frame, text="Red:").grid(row=0, column=0, sticky=tk.E, padx=2)
+        ttk.Spinbox(mapping_frame, from_=0, to=11, textvariable=self.vial_red, width=3).grid(row=0, column=1, padx=2)
+        
+        ttk.Label(mapping_frame, text="Yellow:").grid(row=0, column=2, sticky=tk.E, padx=(10, 2))
+        ttk.Spinbox(mapping_frame, from_=0, to=11, textvariable=self.vial_yellow, width=3).grid(row=0, column=3, padx=2)
+        
+        ttk.Label(mapping_frame, text="Blue:").grid(row=0, column=4, sticky=tk.E, padx=(10, 2))
+        ttk.Spinbox(mapping_frame, from_=0, to=11, textvariable=self.vial_blue, width=3).grid(row=0, column=5, padx=2)
+        
+        # Row 2: Water, Wash, Waste
+        ttk.Label(mapping_frame, text="Water:").grid(row=1, column=0, sticky=tk.E, padx=2)
+        ttk.Spinbox(mapping_frame, from_=0, to=11, textvariable=self.vial_water, width=3).grid(row=1, column=1, padx=2)
+        
+        ttk.Label(mapping_frame, text="Wash:").grid(row=1, column=2, sticky=tk.E, padx=(10, 2))
+        ttk.Spinbox(mapping_frame, from_=0, to=11, textvariable=self.vial_wash, width=3).grid(row=1, column=3, padx=2)
+        
+        ttk.Label(mapping_frame, text="Waste:").grid(row=1, column=4, sticky=tk.E, padx=(10, 2))
+        ttk.Spinbox(mapping_frame, from_=0, to=11, textvariable=self.vial_waste, width=3).grid(row=1, column=5, padx=2)
         
         # Scrollable frame for vial inputs
-        canvas = tk.Canvas(main_frame, height=400, bg="white")
+        canvas = tk.Canvas(main_frame, height=300, bg="white")
         scrollbar = ttk.Scrollbar(main_frame, orient="vertical", command=canvas.yview)
         scrollable_frame = ttk.Frame(canvas)
         
@@ -82,8 +139,8 @@ class PercentageDispenseGUI:
         canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
         
-        canvas.grid(row=2, column=0, columnspan=4, sticky=(tk.W, tk.E, tk.N, tk.S), pady=20)
-        scrollbar.grid(row=2, column=4, sticky=(tk.N, tk.S))
+        canvas.grid(row=3, column=0, columnspan=4, sticky=(tk.W, tk.E, tk.N, tk.S), pady=10)
+        scrollbar.grid(row=3, column=4, sticky=(tk.N, tk.S))
         
         # Create input fields for vials
         self.scrollable_frame = scrollable_frame
@@ -92,7 +149,7 @@ class PercentageDispenseGUI:
         
         # Buttons frame
         button_frame = ttk.Frame(main_frame)
-        button_frame.grid(row=3, column=0, columnspan=4, pady=20)
+        button_frame.grid(row=4, column=0, columnspan=4, pady=10)
         
         start_button = ttk.Button(button_frame, text="Start Workflow", 
                                  command=self.start_workflow)
@@ -104,13 +161,13 @@ class PercentageDispenseGUI:
         
         # Status label
         self.status_label = ttk.Label(main_frame, text="Ready", foreground="green")
-        self.status_label.grid(row=4, column=0, columnspan=4, pady=10)
+        self.status_label.grid(row=5, column=0, columnspan=4, pady=5)
         
         # Configure grid weights for resizing
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
         main_frame.columnconfigure(0, weight=1)
-        main_frame.rowconfigure(2, weight=1)
+        main_frame.rowconfigure(3, weight=1)
     
     def update_vial_inputs(self):
         """Create input fields for each vial."""
@@ -141,26 +198,39 @@ class PercentageDispenseGUI:
             ttk.Label(frame, text=f"Vial {i}", width=8).pack(side=tk.LEFT, padx=5)
             
             # Percentage inputs
-            water_var = tk.DoubleVar(value=50)
-            red_var = tk.DoubleVar(value=25)
-            blue_var = tk.DoubleVar(value=15)
-            yellow_var = tk.DoubleVar(value=10)
-            sum_var = tk.StringVar(value="100")
+            random_pct = self.generate_random_percentages()
+            water_var = tk.DoubleVar(value=random_pct['water'])
+            red_var = tk.DoubleVar(value=random_pct['red'])
+            blue_var = tk.DoubleVar(value=random_pct['blue'])
+            yellow_var = tk.DoubleVar(value=random_pct['yellow'])
+            sum_var = tk.StringVar(value="100.00")
+            
+            # Use i=i to capture current value (avoid closure bug)
+            def make_update_callback(idx):
+                return lambda *args: self.update_sum(idx)
+            
+            update_cb = make_update_callback(i)
+            
+            # Add trace to update sum when values change (including typing)
+            water_var.trace_add('write', update_cb)
+            red_var.trace_add('write', update_cb)
+            blue_var.trace_add('write', update_cb)
+            yellow_var.trace_add('write', update_cb)
             
             water_spin = ttk.Spinbox(frame, from_=0, to=100, textvariable=water_var, 
-                                     width=8, command=lambda: self.update_sum(i))
+                                     width=8, increment=1)
             water_spin.pack(side=tk.LEFT, padx=5)
             
             red_spin = ttk.Spinbox(frame, from_=0, to=100, textvariable=red_var,
-                                   width=8, command=lambda: self.update_sum(i))
+                                   width=8, increment=1)
             red_spin.pack(side=tk.LEFT, padx=5)
             
             blue_spin = ttk.Spinbox(frame, from_=0, to=100, textvariable=blue_var,
-                                    width=8, command=lambda: self.update_sum(i))
+                                    width=8, increment=1)
             blue_spin.pack(side=tk.LEFT, padx=5)
             
             yellow_spin = ttk.Spinbox(frame, from_=0, to=100, textvariable=yellow_var,
-                                      width=8, command=lambda: self.update_sum(i))
+                                      width=8, increment=1)
             yellow_spin.pack(side=tk.LEFT, padx=5)
             
             sum_label = ttk.Label(frame, textvariable=sum_var, width=8, foreground="blue")
@@ -185,13 +255,32 @@ class PercentageDispenseGUI:
             return
         
         vial = self.vial_inputs[vial_idx]
-        total = (vial['water'].get() + vial['red'].get() + 
-                vial['blue'].get() + vial['yellow'].get())
         
-        vial['sum'].set(f"{total:.1f}")
+        # Safely get values, handling invalid input
+        try:
+            water = vial['water'].get()
+        except tk.TclError: 
+            water = 0
+        try:
+            red = vial['red'].get()
+        except tk.TclError:
+            red = 0
+        try:
+            blue = vial['blue'].get()
+        except tk.TclError:
+            blue = 0
+        try:
+            yellow = vial['yellow'].get()
+        except tk.TclError:
+            yellow = 0
         
-        # Color code: green if 100, red otherwise
-        if 99.9 <= total <= 100.1:
+        total = water + red + blue + yellow
+        
+        # Show 2 decimal places for accuracy
+        vial['sum'].set(f"{total:.2f}")
+        
+        # Color code: green if exactly 100, red otherwise
+        if total == 100.0:
             vial['sum_label'].config(foreground="green")
         else:
             vial['sum_label'].config(foreground="red")
@@ -250,21 +339,32 @@ class PercentageDispenseGUI:
         
         return volumes
     
-    def condition_needle(self, dispenser, logger):
+    def get_vial_mapping(self):
+        """Get current vial mapping from GUI inputs."""
+        return {
+            'Red': self.vial_red.get(),
+            'Yellow': self.vial_yellow.get(),
+            'Blue': self.vial_blue.get(),
+            'Water': self.vial_water.get(),
+            'wash': self.vial_wash.get(),
+            'waste': self.vial_waste.get()
+        }
+    
+    def condition_needle(self, dispenser, logger, vial_mapping):
         """Condition the needle by dispensing between wash and waste."""
         logger.debug("Conditioning needle: wash -> waste")
         
         dispenser.dispense_between(
-            source_location="reservoir_12",
-            source_index=self.RESERVOIRS['wash'],
-            dest_location="reservoir_12",
-            dest_index=self.RESERVOIRS['waste'],
+            source_location="vial_rack_12",
+            source_index=vial_mapping['wash'],
+            dest_location="vial_rack_12",
+            dest_index=vial_mapping['waste'],
             transfer_vol=0.5  # 500 μL for conditioning
         )
         
         time.sleep(0.2)
     
-    def dispense_colors_to_vials(self, dispenser, percentage_sets, logger):
+    def dispense_colors_to_vials(self, dispenser, percentage_sets, logger, vial_mapping, dest_start_index):
         """Dispense all color combinations to vials with conditioning between each color."""
         num_vials = len(percentage_sets)
         logger.info(f"Preparing to fill {num_vials} vials with {len(self.COLOR_ORDER)} colors each")
@@ -280,26 +380,27 @@ class PercentageDispenseGUI:
             for vial_idx, percentages in enumerate(percentage_sets):
                 volumes = self.percentages_to_volumes(percentages)
                 volume_ml = volumes.get(color, 0)
+                dest_vial = dest_start_index + vial_idx
                 
                 if volume_ml > 0.025:  # Only dispense if volume is > 25 μL (minimum)
-                    logger.info(f"Vial {vial_idx}: Dispensing {volume_ml:.3f} mL of {color}")
-                    self.status_label.config(text=f"Dispensing {color} to vial {vial_idx}...")
+                    logger.info(f"Vial {dest_vial}: Dispensing {volume_ml:.3f} mL of {color}")
+                    self.status_label.config(text=f"Dispensing {color} to vial {dest_vial}...")
                     self.root.update()
                     
                     try:
                         dispenser.dispense_between(
-                            source_location="reservoir_12",
-                            source_index=self.RESERVOIRS[color],
-                            dest_location="vial_rack",
-                            dest_index=vial_idx,
+                            source_location="vial_rack_12",
+                            source_index=vial_mapping[color],
+                            dest_location="vial_rack_12",
+                            dest_index=dest_vial,
                             transfer_vol=volume_ml
                         )
-                        logger.debug(f"✓ {color} dispensed successfully to vial {vial_idx}")
+                        logger.debug(f"✓ {color} dispensed successfully to vial {dest_vial}")
                     except Exception as e:
-                        logger.error(f"✗ Failed to dispense {color} to vial {vial_idx}: {e}")
+                        logger.error(f"✗ Failed to dispense {color} to vial {dest_vial}: {e}")
                         raise
                 else:
-                    logger.debug(f"Vial {vial_idx}: Skipping {color} (volume {volume_ml:.3f} mL < 25 μL minimum)")
+                    logger.debug(f"Vial {dest_vial}: Skipping {color} (volume {volume_ml:.3f} mL < 25 μL minimum)")
                 
                 time.sleep(0.1)
             
@@ -309,7 +410,7 @@ class PercentageDispenseGUI:
             self.root.update()
             
             try:
-                self.condition_needle(dispenser, logger)
+                self.condition_needle(dispenser, logger, vial_mapping)
                 logger.debug(f"✓ Needle conditioned after {color}")
             except Exception as e:
                 logger.error(f"✗ Failed to condition needle: {e}")
@@ -320,26 +421,36 @@ class PercentageDispenseGUI:
     def run_workflow(self, percentage_sets):
         """Run the workflow in a background thread."""
         try:
+            # Get current settings from GUI
+            is_virtual = self.virtual_mode.get()
+            vial_mapping = self.get_vial_mapping()
+            
+            # Destination vials start after the source vials (6-11)
+            dest_start_index = 6
+            
             # Initialize logging
-            logger = start_workflow_logging("multi_well_percentage_dispenser", virtual=self.VIRTUAL)
+            logger = start_workflow_logging("multi_well_percentage_dispenser", virtual=is_virtual)
             
             self.status_label.config(text="Initializing hardware...", foreground="blue")
             self.root.update()
             
             # Initialize hardware
             dispenser = Liquid_Dispenser(
-                cnc_comport="COM3",
-                actuator_comport="COM7",
-                virtual=self.VIRTUAL
+                cnc_comport="COM5",
+                actuator_comport="COM3",
+                virtual=is_virtual
             )
             
             logger.info("=" * 70)
             logger.info("Starting Multi-Well Percentage Dispenser Workflow (GUI)")
+            logger.info(f"Virtual mode: {is_virtual}")
+            logger.info(f"Vial mapping: {vial_mapping}")
+            logger.info(f"Destination vials: {dest_start_index} to {dest_start_index + len(percentage_sets) - 1}")
             logger.info("=" * 70)
             
             starttime = time.time()
             
-            self.dispense_colors_to_vials(dispenser, percentage_sets, logger)
+            self.dispense_colors_to_vials(dispenser, percentage_sets, logger, vial_mapping, dest_start_index)
             
             elapsed_time = time.time() - starttime
             

@@ -17,8 +17,8 @@ from sklearn.metrics import r2_score
 from sklearn.preprocessing import StandardScaler
 from pathlib import Path
 
-# Group compositions (volumes in mL)
-GROUP_COMPOSITIONS = {
+# Default group compositions (volumes in mL)
+DEFAULT_GROUP_COMPOSITIONS = {
     1: {'v_R': 0.3, 'v_Y': 0.3, 'v_B': 0.3},
     2: {'v_R': 0.7, 'v_Y': 0.1, 'v_B': 0.1},
     3: {'v_R': 0.1, 'v_Y': 0.7, 'v_B': 0.1},
@@ -44,6 +44,27 @@ RAW_CHANNELS = ['RGB_R', 'RGB_G', 'RGB_B', 'LAB_L', 'LAB_A', 'LAB_B', 'HSV_H', '
 NORM_CHANNELS = ["R'", "G'", "B'", "L'", "C'", "h'", "H'", "S'", "V'"]
 
 
+def load_group_compositions(dataset_path):
+    """Load composition map from dataset output, falling back to defaults."""
+    composition_map_path = os.path.join(dataset_path, "composition_map.csv")
+    if not os.path.exists(composition_map_path):
+        return DEFAULT_GROUP_COMPOSITIONS
+
+    comp_df = pd.read_csv(composition_map_path)
+    required_cols = {'group_id', 'v_R', 'v_Y', 'v_B'}
+    if not required_cols.issubset(set(comp_df.columns)):
+        return DEFAULT_GROUP_COMPOSITIONS
+
+    mapping = {}
+    for _, row in comp_df.iterrows():
+        mapping[int(row['group_id'])] = {
+            'v_R': float(row['v_R']),
+            'v_Y': float(row['v_Y']),
+            'v_B': float(row['v_B']),
+        }
+    return mapping
+
+
 def load_data(dataset_path):
     """Load measurement summary and normalized channels."""
     summary_path = os.path.join(dataset_path, "measurement_summary.csv")
@@ -51,10 +72,12 @@ def load_data(dataset_path):
     
     summary_df = pd.read_csv(summary_path)
     
+    group_compositions = load_group_compositions(dataset_path)
+
     # Add volume columns
-    summary_df['v_R'] = summary_df['group_id'].map(lambda g: GROUP_COMPOSITIONS[g]['v_R'])
-    summary_df['v_Y'] = summary_df['group_id'].map(lambda g: GROUP_COMPOSITIONS[g]['v_Y'])
-    summary_df['v_B'] = summary_df['group_id'].map(lambda g: GROUP_COMPOSITIONS[g]['v_B'])
+    summary_df['v_R'] = summary_df['group_id'].map(lambda g: group_compositions[int(g)]['v_R'])
+    summary_df['v_Y'] = summary_df['group_id'].map(lambda g: group_compositions[int(g)]['v_Y'])
+    summary_df['v_B'] = summary_df['group_id'].map(lambda g: group_compositions[int(g)]['v_B'])
     
     # Load normalized channels if available
     norm_df = None
@@ -68,9 +91,9 @@ def load_data(dataset_path):
         ).reset_index()
         
         # Add volume columns
-        norm_wide['v_R'] = norm_wide['group_id'].map(lambda g: GROUP_COMPOSITIONS[g]['v_R'])
-        norm_wide['v_Y'] = norm_wide['group_id'].map(lambda g: GROUP_COMPOSITIONS[g]['v_Y'])
-        norm_wide['v_B'] = norm_wide['group_id'].map(lambda g: GROUP_COMPOSITIONS[g]['v_B'])
+        norm_wide['v_R'] = norm_wide['group_id'].map(lambda g: group_compositions[int(g)]['v_R'])
+        norm_wide['v_Y'] = norm_wide['group_id'].map(lambda g: group_compositions[int(g)]['v_Y'])
+        norm_wide['v_B'] = norm_wide['group_id'].map(lambda g: group_compositions[int(g)]['v_B'])
     else:
         norm_wide = None
     
@@ -204,9 +227,10 @@ def compute_standardized_coefficients(summary_df, norm_df):
     """
     results = []
     scaler = StandardScaler()
+    x_cols = ['v_R', 'v_Y']
     
-    # Prepare X (volumes) - standardize
-    X = summary_df[['v_R', 'v_Y', 'v_B']].values
+    # Use K-1 predictors to avoid singular compositional design (v_R + v_Y + v_B = constant)
+    X = summary_df[x_cols].values
     X_scaled = scaler.fit_transform(X)
     
     # Raw channels
@@ -219,18 +243,37 @@ def compute_standardized_coefficients(summary_df, norm_df):
         y_scaled = (y - y.mean()) / y.std() if y.std() > 0 else y - y.mean()
         
         model = LinearRegression().fit(X_scaled, y_scaled)
+        full_r2 = r2_score(y_scaled, model.predict(X_scaled))
+
+        coef_v_R = float(model.coef_[0])
+        coef_v_Y = float(model.coef_[1])
+        coef_v_B = -(coef_v_R + coef_v_Y)
+
+        # Partial R² via nested models in identifiable space
+        reduced_v_Y = LinearRegression().fit(X_scaled[:, [1]], y_scaled)
+        r2_without_v_R = r2_score(y_scaled, reduced_v_Y.predict(X_scaled[:, [1]]))
+        partial_r2_v_R = (full_r2 - r2_without_v_R) / (1 - r2_without_v_R) if (1 - r2_without_v_R) > 1e-12 else np.nan
+
+        reduced_v_R = LinearRegression().fit(X_scaled[:, [0]], y_scaled)
+        r2_without_v_Y = r2_score(y_scaled, reduced_v_R.predict(X_scaled[:, [0]]))
+        partial_r2_v_Y = (full_r2 - r2_without_v_Y) / (1 - r2_without_v_Y) if (1 - r2_without_v_Y) > 1e-12 else np.nan
+
+        coef_l2 = float(np.sqrt(coef_v_R**2 + coef_v_Y**2 + coef_v_B**2))
         
         results.append({
             'channel': channel,
             'channel_type': 'raw',
-            'coef_v_R': model.coef_[0],
-            'coef_v_Y': model.coef_[1],
-            'coef_v_B': model.coef_[2],
+            'coef_v_R': coef_v_R,
+            'coef_v_Y': coef_v_Y,
+            'coef_v_B': coef_v_B,
+            'coef_l2_contrast': coef_l2,
+            'partial_r2_v_R': partial_r2_v_R,
+            'partial_r2_v_Y': partial_r2_v_Y,
         })
     
     # Normalized channels
     if norm_df is not None:
-        X_norm = norm_df[['v_R', 'v_Y', 'v_B']].values
+        X_norm = norm_df[x_cols].values
         X_norm_scaled = scaler.fit_transform(X_norm)
         
         for channel in NORM_CHANNELS:
@@ -241,13 +284,31 @@ def compute_standardized_coefficients(summary_df, norm_df):
             y_scaled = (y - y.mean()) / y.std() if y.std() > 0 else y - y.mean()
             
             model = LinearRegression().fit(X_norm_scaled, y_scaled)
+            full_r2 = r2_score(y_scaled, model.predict(X_norm_scaled))
+
+            coef_v_R = float(model.coef_[0])
+            coef_v_Y = float(model.coef_[1])
+            coef_v_B = -(coef_v_R + coef_v_Y)
+
+            reduced_v_Y = LinearRegression().fit(X_norm_scaled[:, [1]], y_scaled)
+            r2_without_v_R = r2_score(y_scaled, reduced_v_Y.predict(X_norm_scaled[:, [1]]))
+            partial_r2_v_R = (full_r2 - r2_without_v_R) / (1 - r2_without_v_R) if (1 - r2_without_v_R) > 1e-12 else np.nan
+
+            reduced_v_R = LinearRegression().fit(X_norm_scaled[:, [0]], y_scaled)
+            r2_without_v_Y = r2_score(y_scaled, reduced_v_R.predict(X_norm_scaled[:, [0]]))
+            partial_r2_v_Y = (full_r2 - r2_without_v_Y) / (1 - r2_without_v_Y) if (1 - r2_without_v_Y) > 1e-12 else np.nan
+
+            coef_l2 = float(np.sqrt(coef_v_R**2 + coef_v_Y**2 + coef_v_B**2))
             
             results.append({
                 'channel': channel,
                 'channel_type': 'normalized',
-                'coef_v_R': model.coef_[0],
-                'coef_v_Y': model.coef_[1],
-                'coef_v_B': model.coef_[2],
+                'coef_v_R': coef_v_R,
+                'coef_v_Y': coef_v_Y,
+                'coef_v_B': coef_v_B,
+                'coef_l2_contrast': coef_l2,
+                'partial_r2_v_R': partial_r2_v_R,
+                'partial_r2_v_Y': partial_r2_v_Y,
             })
     
     return pd.DataFrame(results)
@@ -485,14 +546,19 @@ def plot_sensitivity_bars(sensitivity_df, output_dir, dataset_name):
 
 def plot_coefficient_bars(coef_df, output_dir, dataset_name):
     """
-    Plot sensitivity ranking based on max absolute coefficient (CORRECT metric).
-    
-    Max |coefficient| indicates how strongly each channel responds to ANY dye change.
+    Plot differentiation ranking based on coefficient L2 contrast norm.
     """
     
-    # Compute max absolute coefficient for each channel
+    # Use robust differentiation metric when available
     coef_df = coef_df.copy()
-    coef_df['max_abs_coef'] = coef_df[['coef_v_R', 'coef_v_Y', 'coef_v_B']].abs().max(axis=1)
+    if 'coef_l2_contrast' in coef_df.columns:
+        coef_df['diff_metric'] = coef_df['coef_l2_contrast']
+        x_label = 'Differentiation (L2 norm of compositional contrast coefficients)'
+        title_metric = 'L2 Contrast Coefficient Norm'
+    else:
+        coef_df['diff_metric'] = coef_df[['coef_v_R', 'coef_v_Y', 'coef_v_B']].abs().max(axis=1)
+        x_label = 'Max |Coefficient| (sensitivity to dye changes)'
+        title_metric = 'Max Absolute Coefficient'
     
     # Also identify which dye has the max effect
     def get_max_dye(row):
@@ -503,11 +569,11 @@ def plot_coefficient_bars(coef_df, output_dir, dataset_name):
     
     fig, ax = plt.subplots(figsize=(12, 8))
     
-    # Sort by max absolute coefficient
-    df_sorted = coef_df.sort_values('max_abs_coef', ascending=True)
+    # Sort by differentiation metric
+    df_sorted = coef_df.sort_values('diff_metric', ascending=True)
     
     channels = df_sorted['channel'].tolist()
-    values = df_sorted['max_abs_coef'].tolist()
+    values = df_sorted['diff_metric'].tolist()
     
     # Color by dominant dye
     dye_colors = {'v_R': 'red', 'v_Y': 'gold', 'v_B': 'blue'}
@@ -521,9 +587,9 @@ def plot_coefficient_bars(coef_df, output_dir, dataset_name):
     
     ax.set_yticks(y)
     ax.set_yticklabels(channels)
-    ax.set_xlabel('Max |Coefficient| (sensitivity to dye changes)')
-    ax.set_title(f'Sensitivity Ranking (Max Absolute Coefficient)\n{dataset_name}\nColor = dominant dye, Black edge = raw, Gray edge = normalized')
-    ax.set_xlim(0, 1)
+    ax.set_xlabel(x_label)
+    ax.set_title(f'Sensitivity Ranking ({title_metric})\n{dataset_name}\nColor = dominant dye, Black edge = raw, Gray edge = normalized')
+    ax.set_xlim(0, max(values) * 1.15 if len(values) > 0 else 1)
     ax.grid(True, alpha=0.3, axis='x')
     
     # Add value labels with dominant dye
@@ -627,17 +693,20 @@ def plot_channel_vs_volume_scatter(summary_df, norm_df, output_dir, dataset_name
 
 def plot_stability_vs_sensitivity(stability_df, coef_df, output_dir, dataset_name):
     """
-    Plot stability (x-axis, lower=better) vs sensitivity (y-axis, higher=better).
-    
-    Uses max absolute coefficient as sensitivity metric (CORRECT).
+    Plot stability (x-axis, lower=better) vs differentiation (y-axis, higher=better).
     """
     
     # Average stability across groups for each channel
     avg_stability = stability_df.groupby(['channel', 'channel_type'])['norm_std'].mean().reset_index()
     
-    # Compute max absolute coefficient for sensitivity
+    # Compute robust differentiation metric
     coef_df = coef_df.copy()
-    coef_df['max_abs_coef'] = coef_df[['coef_v_R', 'coef_v_Y', 'coef_v_B']].abs().max(axis=1)
+    if 'coef_l2_contrast' in coef_df.columns:
+        coef_df['differentiation_metric'] = coef_df['coef_l2_contrast']
+        y_axis_label = 'Differentiation (L2 compositional contrast) — More Differentiating →'
+    else:
+        coef_df['differentiation_metric'] = coef_df[['coef_v_R', 'coef_v_Y', 'coef_v_B']].abs().max(axis=1)
+        y_axis_label = 'Sensitivity (max |coefficient|) — More Differentiating →'
     
     # Merge stability with coefficients
     merged = pd.merge(avg_stability, coef_df, on=['channel', 'channel_type'])
@@ -662,7 +731,7 @@ def plot_stability_vs_sensitivity(stability_df, coef_df, output_dir, dataset_nam
     for _, row in merged.iterrows():
         channel = row['channel']
         x = row['norm_std']
-        y = row['max_abs_coef']
+        y = row['differentiation_metric']
         
         color = color_map.get(channel, 'black')
         marker = 'o' if row['channel_type'] == 'raw' else '^'
@@ -675,7 +744,7 @@ def plot_stability_vs_sensitivity(stability_df, coef_df, output_dir, dataset_nam
     
     # Add quadrant lines at median values
     median_x = merged['norm_std'].median()
-    median_y = merged['max_abs_coef'].median()
+    median_y = merged['differentiation_metric'].median()
     ax.axvline(x=median_x, color='gray', linestyle='--', alpha=0.5)
     ax.axhline(y=median_y, color='gray', linestyle='--', alpha=0.5)
     
@@ -690,7 +759,7 @@ def plot_stability_vs_sensitivity(stability_df, coef_df, output_dir, dataset_nam
             fontsize=10, verticalalignment='bottom', horizontalalignment='left', color='red')
     
     ax.set_xlabel('Stability (std/range) — More Stable →', fontsize=11)
-    ax.set_ylabel('Sensitivity (max |coefficient|) — More Differentiating →', fontsize=11)
+    ax.set_ylabel(y_axis_label, fontsize=11)
     ax.set_title(f'Channel Quality: Stability vs Sensitivity\n{dataset_name}', fontsize=12)
     ax.grid(True, alpha=0.3)
     
@@ -699,8 +768,9 @@ def plot_stability_vs_sensitivity(stability_df, coef_df, output_dir, dataset_nam
     
     # Set axis limits with some padding - zoom in on the data
     ax.set_xlim(merged['norm_std'].max() * 1.2, 0)
-    y_min = max(0, merged['max_abs_coef'].min() - 0.05)  # Start just below lowest point
-    ax.set_ylim(y_min, 1.02)
+    y_min = max(0, merged['differentiation_metric'].min() - 0.05)  # Start just below lowest point
+    y_max = merged['differentiation_metric'].max() * 1.1 if len(merged) > 0 else 1
+    ax.set_ylim(y_min, max(y_min + 0.1, y_max))
     
     # Add legend for marker types
     from matplotlib.lines import Line2D
