@@ -10,8 +10,8 @@ from matplotlib.figure import Figure
 from base_workflow import Liquid_Dispenser, start_workflow_logging
 
 # --- Config ---
-VIRTUAL    = True
-WELL       = 0
+VIRTUAL    = False
+WELL       = 6 
 HCL_VIAL   = 0   # vial_rack_12 index
 NAOH_VIAL  = 1   # vial_rack_12 index
 WATER_VIAL = 2   # vial_rack_12 index
@@ -44,8 +44,11 @@ def crop_path_for(step):
 
 def run_workflow(q):
     logger   = start_workflow_logging("titration", virtual=VIRTUAL)
-    dispenser = Liquid_Dispenser(cnc_comport="COM4", actuator_comport="COM3", virtual=VIRTUAL)
+    dispenser = Liquid_Dispenser(cnc_comport="COM5", actuator_comport="COM3", virtual=VIRTUAL)
     dispenser.cnc_machine.home()
+
+    # Startup tip conditioning in water x5
+    dispenser.rinse_needle("vial_rack_12", WATER_VIAL, num_mixes=5)
 
     # Step 0 — HCl baseline
     dispenser.dispense_between("vial_rack_12", HCL_VIAL, "well_plate", WELL, transfer_vol=0.8)
@@ -77,6 +80,7 @@ class TitrationGUI:
         self.ch_colors = CHANNEL_STYLES[COLOR_SPACE]
         self.step_data = {}
         self.photo_refs = []  # prevent GC
+        self.thumb_photos = [None] * TOTAL_STEPS  # stable per-step references
 
         root.title("Titration Demo")
         root.configure(bg="#1e1e1e")
@@ -91,11 +95,13 @@ class TitrationGUI:
         for i in range(TOTAL_STEPS):
             ph_photo = ImageTk.PhotoImage(placeholder_img)
             self.photo_refs.append(ph_photo)
+            self.thumb_photos[i] = ph_photo
 
             col = tk.Frame(img_frame, bg="#1e1e1e")
             col.pack(side="left", padx=3)
 
             lbl = tk.Label(col, image=ph_photo, bg="#1e1e1e", bd=0)
+            lbl.image = ph_photo
             lbl.pack()
             tk.Label(col, text=f"step {i}", bg="#1e1e1e", fg="#888888", font=("Arial", 8)).pack()
             self.thumb_labels.append(lbl)
@@ -144,10 +150,13 @@ class TitrationGUI:
         loaded = False
         if crop_path and os.path.exists(crop_path):
             try:
-                img   = Image.open(crop_path).resize((THUMB_W, THUMB_H), Image.LANCZOS)
+                with Image.open(crop_path) as opened_img:
+                    img = opened_img.copy().resize((THUMB_W, THUMB_H), Image.LANCZOS)
                 photo = ImageTk.PhotoImage(img)
                 self.photo_refs.append(photo)
+                self.thumb_photos[step] = photo
                 self.thumb_labels[step].config(image=photo)
+                self.thumb_labels[step].image = photo
                 loaded = True
             except Exception:
                 pass
@@ -157,7 +166,9 @@ class TitrationGUI:
             swatch = Image.new("RGB", (THUMB_W, THUMB_H), (r, g, b))
             photo  = ImageTk.PhotoImage(swatch)
             self.photo_refs.append(photo)
+            self.thumb_photos[step] = photo
             self.thumb_labels[step].config(image=photo)
+            self.thumb_labels[step].image = photo
 
         # Chart update
         xs = sorted(self.step_data)
