@@ -20,7 +20,9 @@ dispenser.rinse_needle("vial_rack_12", WATER_VIAL)
 
 # --- Titration loop ---
 for i in range(1, NUM_REPEATS + 1):
-    dispenser.dispense_between("vial_rack_12", NAOH_VIAL, "well_plate", WELL, transfer_vol=0.1, mixing_vol=0.2)
+    dispenser.dispense_between("vial_rack_12", NAOH_VIAL, "well_plate", WELL, transfer_vol=0.1, mixing_vol=0.4)
     color = dispenser.get_image_color("well_plate_camera", WELL, f"step_{i}")
     logger.info(f"Step {i} (after {i * 100} uL NaOH): {color}")
     dispenser.rinse_needle("vial_rack_12", WATER_VIAL)
+
+    
