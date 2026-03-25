@@ -24,13 +24,13 @@ reservoir_12: #Array-location
   num_x: 1 #Rows
   num_y: 12 #Columns
   x_origin: 97.0 #move the cnc machine with the needle attached, and find the position 
-  y_origin: 102.0
+  y_origin: 100.5
   z_origin: 0 #-64 (inside dispense_between()) 
   x_offset: 0 #Measure with caliper
   y_offset: -8.92 #MEasure with caliper
-  aspirate_height: -64
+  aspirate_height: -70
   dispense_height: -15
-  mixing_height: -64
+  mixing_height: -70
 well_plate: #Array-location
   num_x: 4 #Rows
   num_y: 6 #Columns
@@ -41,7 +41,7 @@ well_plate: #Array-location
   y_offset: -19.5 #MEasure with caliper
   aspirate_height: none
   dispense_height: -25
-  mixing_height: -55
+  mixing_height: -58
 well_plate_camera: #Array-location
   num_x: 4 #Rows
   num_y: 6 #Columns

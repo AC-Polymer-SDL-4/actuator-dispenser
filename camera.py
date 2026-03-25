@@ -120,9 +120,11 @@ class Camera:
                         self.logger.warning("Camera warm-up frame %d failed", i + 1)
                     time.sleep(0.08)
                 if ok_frames < 3:
-                    self.logger.warning("Camera warm-up had few successful frames (%d/15)", ok_frames)
-                    # Attempt a fallback reopen with alternate settings
-                    self._fallback_reopen()
+                    self.logger.error("Camera warm-up had few successful frames (%d/15)", ok_frames)
+                    raise RuntimeError(
+                        f"Camera initialization failed during warm-up ({ok_frames}/15 frames ok). "
+                        "Aborting startup instead of fallback reopen."
+                    )
                 else:
                     self.logger.info("Camera warm-up completed (%d/15 frames ok)", ok_frames)
 
