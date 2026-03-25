@@ -225,7 +225,7 @@ def create_mixture_at_well(dispenser, well_index, volumes_ml, logger):
                 dest_index=well_index,
                 transfer_vol=volume_ml,
                 mixing_vol=dispense_mix_volume,
-                num_mixes=5 if component == last_component else 0,
+                num_mixes=5 if component == last_component else 0, #TODO check leftover volumes inside pipet
                 speed=41000,  # Default speed
             )
 

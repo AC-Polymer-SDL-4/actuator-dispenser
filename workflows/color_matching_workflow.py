@@ -76,7 +76,7 @@ INITIALIZATION_METHOD = 'sobol'  # Options: 'sobol' (default), 'corner'
 # OBJECTIVE CONFIGURATION
 # =============================================================================
 # OBJECTIVE_MODE controls how the optimization objective is calculated:
-#   'full_distance' - Minimize Euclidean distance across all channels (default behavior)
+#   'full_distance' - Minimize Euclidean distance across selected channels
 #   'single_channel' - Minimize absolute difference in ONE specific channel
 #
 # Based on sensitivity+stability analysis, the top 3 channels for BO are:
@@ -97,9 +97,24 @@ CHANNEL_TO_COLORSPACE = {
     'L': 'LAB', 'A': 'LAB',
 }
 
-# Choose color space for matching: 'RGB', 'RGBA', 'HSV', or 'LAB'
-# NOTE: This will be overridden if OBJECTIVE_MODE = 'single_channel'
-COLOR_SPACE = 'LAB'
+# Distance space for full-distance objective.
+# Supported:
+#   RGB, HSV, LAB, CIELAB, RGBN, HSVN, LABN, TRIPLET
+#Try: RGB, HSV, LAB, RGBN 
+# where:
+#   RGBN = normalized R'G'B'
+#   HSVN = normalized H'S'V'
+#   LABN = normalized L'A'B'
+#   CIELAB = same channel set as LAB (Euclidean / DeltaE76-style distance)
+DISTANCE_SPACE = 'RGBN'
+
+# For DISTANCE_SPACE='TRIPLET', define channels as comma-separated tokens.
+# Example: "L,S,V" or "S,A,LAB_B"
+DISTANCE_TRIPLET = None
+
+# Backward-compatible color-space label for logging/output naming.
+# NOTE: this no longer controls measurement directly.
+COLOR_SPACE = DISTANCE_SPACE
 
 # Auto-set COLOR_SPACE based on OBJECTIVE_CHANNEL when in single_channel mode
 if OBJECTIVE_MODE == 'single_channel':
@@ -107,6 +122,8 @@ if OBJECTIVE_MODE == 'single_channel':
         COLOR_SPACE = CHANNEL_TO_COLORSPACE[OBJECTIVE_CHANNEL.upper()]
     else:
         raise ValueError(f"Unknown channel '{OBJECTIVE_CHANNEL}'. Valid options: {list(CHANNEL_TO_COLORSPACE.keys())}")
+else:
+    COLOR_SPACE = DISTANCE_SPACE
 
 COLOR_SPACE = COLOR_SPACE.upper() #just to make sure it's in uppercase
 
@@ -158,7 +175,7 @@ def hue_distance_deg(h1, h2):
         d = 360 - d
     return d
 
-def hsv_distance(hsv1, hsv2, weights=(0.6, 0.2, 0.2)):
+def hsv_distance(hsv1, hsv2):
     if hsv1 is None or hsv2 is None:
         return float('inf')
     h1, s1, v1 = hsv1
@@ -166,8 +183,7 @@ def hsv_distance(hsv1, hsv2, weights=(0.6, 0.2, 0.2)):
     dh = hue_distance_deg(h1, h2) / 180.0
     ds = abs(s1 - s2)
     dv = abs(v1 - v2)
-    w_h, w_s, w_v = weights
-    return np.sqrt((w_h * dh) ** 2 + (w_s * ds) ** 2 + (w_v * dv) ** 2)
+    return np.sqrt((dh) ** 2 + (ds) ** 2 + (dv) ** 2)
 
 def lab_distance(lab1, lab2):
     if lab1 is None or lab2 is None:
@@ -206,6 +222,128 @@ def single_channel_distance(target_col, sample_col, channel):
     # Standard absolute difference for other channels
     return abs(float(target_val) - float(sample_val))
 
+
+SPACE_TO_CHANNELS = {
+    'RGB': ['R', 'G', 'B'],
+    'HSV': ['H', 'S', 'V'],
+    'LAB': ['L', 'A', 'LAB_B'],
+    'CIELAB': ['L', 'A', 'LAB_B'],
+    'RGBN': ["R'", "G'", "B'"],
+    'HSVN': ["H'", "S'", "V'"],
+    'LABN': ["L'", "A'", "LAB_B'"],
+}
+
+
+def _parse_triplet_channels(triplet_text):
+    if not triplet_text:
+        raise ValueError("DISTANCE_TRIPLET must be provided when DISTANCE_SPACE='TRIPLET'")
+    tokens = [token.strip() for token in str(triplet_text).split(',') if token.strip()]
+    if len(tokens) != 3:
+        raise ValueError(f"Distance triplet must have exactly 3 channels, got: {tokens}")
+    return tokens
+
+
+def get_distance_channels(distance_space=DISTANCE_SPACE, triplet_text=DISTANCE_TRIPLET):
+    space = str(distance_space).upper()
+    if space == 'TRIPLET':
+        return _parse_triplet_channels(triplet_text)
+    if space not in SPACE_TO_CHANNELS:
+        raise ValueError(f"Unknown DISTANCE_SPACE '{distance_space}'. Supported: {list(SPACE_TO_CHANNELS.keys()) + ['TRIPLET']}")
+    return SPACE_TO_CHANNELS[space]
+
+
+def _canonical_channel_token(token):
+    t = token.strip()
+    u = t.upper()
+
+    # Explicit LAB B aliases for cross-space triplets
+    if u in {'LAB_B', 'B_LAB', 'BLAB'}:
+        return 'LAB_B'
+    if u in {"LAB_B'", "B_LAB'", "BLAB'", "LABN_B", "LAB_B_N"}:
+        return "LAB_B'"
+
+    # Explicit prefixed aliases
+    if u in {'RGB_R', 'RGB_G', 'RGB_B', 'HSV_H', 'HSV_S', 'HSV_V', 'LAB_L', 'LAB_A'}:
+        return u.split('_')[1]
+
+    # Keep standard channel tokens and normalized tokens
+    if t in {"R", "G", "B", "H", "S", "V", "L", "A", "R'", "G'", "B'", "H'", "S'", "V'", "L'", "A'", "LAB_B'"}:
+        return t
+
+    raise ValueError(f"Unknown channel token '{token}'. Use tokens like R,G,B,H,S,V,L,A,LAB_B or normalized R',G',B',H',S',V',L',A',LAB_B'.")
+
+
+def get_color_channels(dispenser, location, well_index, measurement_id, channels, square_size=60):
+    """Measure required channels from one well; supports cross-space channel sets."""
+    canonical_channels = [_canonical_channel_token(ch) for ch in channels]
+
+    need_rgb = any(ch in {'R', 'G', 'B', "R'", "G'", "B'"} for ch in canonical_channels)
+    need_hsv = any(ch in {'H', 'S', 'V', "H'", "S'", "V'"} for ch in canonical_channels)
+    need_lab = any(ch in {'L', 'A', 'LAB_B', "L'", "A'", "LAB_B'"} for ch in canonical_channels)
+
+    rgb = dispenser.get_image_color(location, well_index, f"{measurement_id}_rgb", square_size=square_size, color_space='RGB', show_crop=SHOW_CROP) if need_rgb else {}
+    hsv = dispenser.get_image_color(location, well_index, f"{measurement_id}_hsv", square_size=square_size, color_space='HSV', show_crop=False) if need_hsv else {}
+    lab = dispenser.get_image_color(location, well_index, f"{measurement_id}_lab", square_size=square_size, color_space='LAB', show_crop=False) if need_lab else {}
+
+    values = {}
+    for raw_token, ch in zip(channels, canonical_channels):
+        if ch == 'R':
+            values[raw_token] = float(rgb['R'])
+        elif ch == 'G':
+            values[raw_token] = float(rgb['G'])
+        elif ch == 'B':
+            values[raw_token] = float(rgb['B'])
+        elif ch == 'H':
+            values[raw_token] = float(hsv['H'])
+        elif ch == 'S':
+            values[raw_token] = float(hsv['S'])
+        elif ch == 'V':
+            values[raw_token] = float(hsv['V'])
+        elif ch == 'L':
+            values[raw_token] = float(lab['L'])
+        elif ch == 'A':
+            values[raw_token] = float(lab['A'])
+        elif ch == 'LAB_B':
+            values[raw_token] = float(lab['B'])
+        elif ch == "R'":
+            values[raw_token] = float(rgb['R']) / 255.0
+        elif ch == "G'":
+            values[raw_token] = float(rgb['G']) / 255.0
+        elif ch == "B'":
+            values[raw_token] = float(rgb['B']) / 255.0
+        elif ch == "LAB_B'":
+            values[raw_token] = float(lab['B']) / 128.0
+        elif ch == "H'":
+            values[raw_token] = float(hsv['H']) / 360.0
+        elif ch == "S'":
+            values[raw_token] = float(hsv['S']) / 100.0
+        elif ch == "V'":
+            values[raw_token] = float(hsv['V']) / 100.0
+        elif ch == "L'":
+            values[raw_token] = float(lab['L']) / 100.0
+        elif ch == "A'":
+            values[raw_token] = float(lab['A']) / 128.0
+        else:
+            raise ValueError(f"Unsupported canonical channel '{ch}'")
+
+    return values
+
+
+def compute_channel_triplet_distance(target_col, sample_col, channels):
+    """Euclidean distance on an arbitrary channel list with circular handling for hue channels."""
+    sq = []
+    for ch in channels:
+        t = float(target_col[ch])
+        s = float(sample_col[ch])
+        if ch == 'H':
+            d = hue_distance_deg(t, s) / 180.0
+        elif ch == "H'":
+            d = min(abs(t - s), 1.0 - abs(t - s))
+        else:
+            d = abs(t - s)
+        sq.append(d ** 2)
+    return float(np.sqrt(sum(sq)))
+
 def get_color_distance(target_col, sample_col, color_space=COLOR_SPACE, objective_mode=OBJECTIVE_MODE, objective_channel=OBJECTIVE_CHANNEL):
     """
     Calculate color distance based on objective mode.
@@ -217,18 +355,9 @@ def get_color_distance(target_col, sample_col, color_space=COLOR_SPACE, objectiv
     if objective_mode == 'single_channel':
         return single_channel_distance(target_col, sample_col, objective_channel)
     
-    # Full distance mode: use Euclidean distance across all channels
-    target_tuple = tuple(target_col.values())
-    sample_tuple = tuple(sample_col.values())
-
-    if color_space == 'RGB' or color_space == 'RGBA':
-        return rgb_distance(target_tuple, sample_tuple)
-    elif color_space == 'HSV':
-        return hsv_distance(target_tuple, sample_tuple)
-    elif color_space == 'LAB':
-        return lab_distance(target_tuple, sample_tuple)
-    else:
-        return None
+    # Full-distance mode: Euclidean over selected channels (space or custom triplet)
+    channels = list(target_col.keys())
+    return compute_channel_triplet_distance(target_col, sample_col, channels)
 
 def get_color_str(color_dict): #outputs a string representation of color dict (universal for all color spaces)
     return ", ".join(f"{k}={float(v):.3f}" for k, v in color_dict.items())
@@ -290,7 +419,7 @@ def create_mixture_at_well(dispenser, well_index, volumes_ml, logger):
                 dest_index=well_index,
                 transfer_vol=volume_ml,  # Now in mL as expected
                 mixing_vol=dispense_mix_volume,
-                num_mixes = 5 if component == last_component else 0,
+                num_mixes = 5 if component == last_component else 0, #TODO mix well after rinse needle (plus maybe full aspirate) for the last component
                 speed = SPEED,
             )
 
@@ -339,7 +468,7 @@ def condition_system(dispenser, logger):
 def main():
     """Main color matching workflow."""
     # Use global configuration, possibly overridden by CLI args parsed in __main__
-    global VIRTUAL, SAVE_DATA, WITHOUT_WATER, SKIP_HOMING, OPTIMIZER_TYPE, COLOR_SPACE, output_dir
+    global VIRTUAL, SAVE_DATA, WITHOUT_WATER, SKIP_HOMING, OPTIMIZER_TYPE, COLOR_SPACE, DISTANCE_SPACE, DISTANCE_TRIPLET, output_dir
     
     # Regenerate output_dir with updated settings (after CLI parsing)
     output_dir = get_output_dir()
@@ -351,6 +480,12 @@ def main():
     # Initialize logging
     logger = start_workflow_logging("color_matching_workflow", log_filename=log_filename, virtual=VIRTUAL)
     logger.info("=" * 60)
+
+    distance_channels = get_distance_channels(DISTANCE_SPACE, DISTANCE_TRIPLET)
+    if OBJECTIVE_MODE == 'single_channel':
+        distance_channels = [OBJECTIVE_CHANNEL]
+    logger.info(f"Distance space: {DISTANCE_SPACE}")
+    logger.info(f"Distance channels: {distance_channels}")
     logger.info("Starting Color Matching Bayesian Optimization Workflow")
     logger.info("=" * 60)
     
@@ -382,22 +517,30 @@ def main():
         # Step 1: Read target color from well 0
         logger.info("Step 1: Reading target color values from sample at well 0")
         
-        # In virtual mode, use consistent default targets instead of random generation
+        # In virtual mode, use consistent default targets instead of image acquisition
         if VIRTUAL:
             logger.warning("Virtual mode detected, using default target color instead of random generation")
-            if COLOR_SPACE == 'RGB':
-                target_color = {'R': 180, 'G': 120, 'B': 80}  # Brownish target
-            elif COLOR_SPACE == 'HSV':
-                target_color = {'H': 25, 'S': 60, 'V': 70}  # Brownish in HSV (0-360, 0-100, 0-100 scale)
-            elif COLOR_SPACE == 'LAB':
-                target_color = {'L': 50, 'A': 20, 'B': 30}    # Brownish in LAB
-            else:
-                target_color = {'R': 180, 'G': 120, 'B': 80}  # Default to RGB
+            default_channel_values = {
+                'R': 180.0, 'G': 120.0, 'B': 80.0,
+                'H': 25.0, 'S': 60.0, 'V': 70.0,
+                'L': 50.0, 'A': 20.0, 'LAB_B': 30.0,
+                "R'": 180.0 / 255.0, "G'": 120.0 / 255.0, "B'": 80.0 / 255.0,
+                "H'": 25.0 / 360.0, "S'": 60.0 / 100.0, "V'": 70.0 / 100.0,
+                "L'": 50.0 / 100.0, "A'": 20.0 / 128.0, "LAB_B'": 30.0 / 128.0,
+            }
+            target_color = {ch: default_channel_values.get(_canonical_channel_token(ch), 0.0) for ch in distance_channels}
         else:
-            # Real hardware mode - read actual target color from well 0
-            target_color = dispenser.get_image_color("well_plate_camera", TARGET_WELL, "target_sample", square_size=60, color_space=COLOR_SPACE, show_crop=SHOW_CROP)
+            # Real hardware mode - read target channels from well 0
+            target_color = get_color_channels(
+                dispenser,
+                "well_plate_camera",
+                TARGET_WELL,
+                "target_sample",
+                distance_channels,
+                square_size=60,
+            )
 
-        logger.info(f"Target {COLOR_SPACE} values: {get_color_str(target_color)}") #log the target color values
+        logger.info(f"Target values: {get_color_str(target_color)}")
 
         # Calculate upper bound for optimization (max possible distance) - keep RGB max for optimizer scaling
         max_distance = rgb_distance([0, 0, 0], [255, 255, 255])  # Max possible RGB distance
@@ -443,8 +586,9 @@ def main():
         logger.info(f"Objective mode: {OBJECTIVE_MODE}")
         if OBJECTIVE_MODE == 'single_channel':
             logger.info(f"Objective channel: {OBJECTIVE_CHANNEL} (optimizing this channel only)")
-        logger.info(f"Color space: {COLOR_SPACE}")
-        logger.info(f"Target color ({COLOR_SPACE}): {get_color_str(target_color)}")
+        logger.info(f"Color space label: {COLOR_SPACE}")
+        logger.info(f"Distance space: {DISTANCE_SPACE}")
+        logger.info(f"Target channels: {get_color_str(target_color)}")
         logger.info(f"Initial batch size: {INITIAL_BATCH_SIZE}")
         logger.info("\nInitial mixing recommendations:")
         for idx, (_, suggestion) in enumerate(initial_suggestions.iterrows()):
@@ -530,17 +674,24 @@ def main():
             }
             dispenser.camera.set_current_mixture(mixture_volumes)
             
-            well_color = dispenser.get_image_color("well_plate_camera", well_idx, f"experiment_{well_idx}", square_size=60, color_space=COLOR_SPACE)
+            well_color = get_color_channels(
+                dispenser,
+                "well_plate_camera",
+                well_idx,
+                f"experiment_{well_idx}",
+                distance_channels,
+                square_size=60,
+            )
             
             for key, value in well_color.items(): #store the resulting color values
                 result[f'measured_{key}'] = round(value, 2)
 
-            distance = get_color_distance(target_color, well_color, color_space=COLOR_SPACE)
+            distance = get_color_distance(target_color, well_color, color_space=DISTANCE_SPACE)
 
             results_list.append(distance)  # Store for adding to suggestions DataFrame
             result['output'] = distance  # Store in our tracking data
             
-            logger.info(f"Well {well_idx}: {COLOR_SPACE}={get_color_str(well_color)}, Distance={distance:.1f}") #Outputting the RGB values for logging
+            logger.info(f"Well {well_idx}: channels={get_color_str(well_color)}, Distance={distance:.3f}")
             
             if (not dispenser.virtual) or SAVE_DATA:
                 results_df = pd.DataFrame(results_data)
@@ -634,17 +785,24 @@ def main():
                 }
                 dispenser.camera.set_current_mixture(mixture_volumes)
                 
-                well_color = dispenser.get_image_color("well_plate_camera", well_idx, f"experiment_{well_idx}", square_size=60, color_space=COLOR_SPACE)
+                well_color = get_color_channels(
+                    dispenser,
+                    "well_plate_camera",
+                    well_idx,
+                    f"experiment_{well_idx}",
+                    distance_channels,
+                    square_size=60,
+                )
                 
                 for key, value in well_color.items(): #store the resulting color values
                     result[f'measured_{key}'] = round(value, 2)
 
-                distance = get_color_distance(target_color, well_color, color_space=COLOR_SPACE)
+                distance = get_color_distance(target_color, well_color, color_space=DISTANCE_SPACE)
 
                 results_list.append(distance)  # Store for adding to suggestions DataFrame
                 result['output'] = distance  # Store in our tracking data
 
-                logger.info(f"Well {well_idx}: {COLOR_SPACE}={get_color_str(well_color)}, Distance={distance:.1f}")
+                logger.info(f"Well {well_idx}: channels={get_color_str(well_color)}, Distance={distance:.3f}")
 
             # Add results to the new suggestions and combine with campaign data
             new_suggestions['output'] = results_list
@@ -748,7 +906,11 @@ if __name__ == "__main__":
     parser.add_argument("--virtual", action="store_true", help="Run in virtual mode (no hardware movement)")
     parser.add_argument("--skip-homing", action="store_true", help="Skip homing at start")
     parser.add_argument("--optimizer-type", choices=["baybe","gradient","convex"], help="Select optimizer type")
-    parser.add_argument("--color-space", choices=["RGB","RGBA","HSV","LAB"], help="Select color space")
+    parser.add_argument("--color-space", choices=["RGB","RGBA","HSV","LAB"], help="Legacy color-space label (kept for compatibility)")
+    parser.add_argument("--distance-space", choices=["RGB", "HSV", "LAB", "CIELAB", "RGBN", "HSVN", "LABN", "TRIPLET"],
+                        help="Distance space for full_distance objective")
+    parser.add_argument("--distance-triplet", type=str,
+                        help="Comma-separated channels for TRIPLET space, e.g. 'L,S,V' or 'S,A,LAB_B'")
     parser.add_argument("--without-water", action="store_true", help="Disable water component in mixtures")
     parser.add_argument("--show-crop", action="store_true", help="Display the center crop window (blocks until closed)")
     parser.add_argument("--objective-mode", choices=["full_distance", "single_channel"], 
@@ -770,6 +932,14 @@ if __name__ == "__main__":
         # Auto-set color space when channel is specified via CLI
         if OBJECTIVE_CHANNEL in CHANNEL_TO_COLORSPACE:
             COLOR_SPACE = CHANNEL_TO_COLORSPACE[OBJECTIVE_CHANNEL]
+    if args.distance_space:
+        DISTANCE_SPACE = args.distance_space.upper()
+        COLOR_SPACE = DISTANCE_SPACE
+    if args.distance_triplet:
+        DISTANCE_TRIPLET = args.distance_triplet
+        if DISTANCE_SPACE != 'TRIPLET':
+            DISTANCE_SPACE = 'TRIPLET'
+            COLOR_SPACE = DISTANCE_SPACE
     if args.color_space:
         COLOR_SPACE = args.color_space.upper()
     if args.without_water:
