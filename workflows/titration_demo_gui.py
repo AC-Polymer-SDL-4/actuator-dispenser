@@ -12,10 +12,11 @@ from base_workflow import Liquid_Dispenser, start_workflow_logging
 # --- Config ---
 VIRTUAL    = False
 
-WELL       = 22
+WELL       = 3
 HCL_VIAL   = 0   # vial_rack_12 index
 NAOH_VIAL  = 1   # vial_rack_12 index
-WATER_VIAL = 2   # vial_rack_12 index
+WATER_HCL_VIAL  = 3   # dedicated rinse/conditioning water for HCl line
+WATER_NAOH_VIAL = 4   # dedicated rinse/conditioning water for NaOH line
 NUM_REPEATS = 10
 BLOWOUT_REPEATS_START = 5
 COLOR_SPACE = "RGB"   # "RGB", "LAB", "HSV"
@@ -53,12 +54,20 @@ def run_workflow(q):
     dispenser = Liquid_Dispenser(cnc_comport="COM5", actuator_comport="COM3", virtual=VIRTUAL)
     dispenser.cnc_machine.home()
 
-    # Startup explicit blowout conditioning in water
+    # Startup explicit blowout conditioning in dedicated water vials
     dispenser.condition_needle(
         source_location="vial_rack_12",
-        source_index=WATER_VIAL,
+        source_index=WATER_HCL_VIAL,
         dest_location="vial_rack_12",
-        dest_index=WATER_VIAL,
+        dest_index=WATER_HCL_VIAL,
+        num_conditions=BLOWOUT_REPEATS_START,
+        vol_pipet=0.45,
+    )
+    dispenser.condition_needle(
+        source_location="vial_rack_12",
+        source_index=WATER_NAOH_VIAL,
+        dest_location="vial_rack_12",
+        dest_index=WATER_NAOH_VIAL,
         num_conditions=BLOWOUT_REPEATS_START,
         vol_pipet=0.45,
     )
@@ -68,12 +77,12 @@ def run_workflow(q):
     color = dispenser.get_image_color("well_plate_camera", WELL, "step_0", color_space=COLOR_SPACE)
     logger.info(f"Step 0 (HCl baseline): {color}")
     q.put((0, color, crop_path_for(0)))
-    dispenser.rinse_needle("vial_rack_12", WATER_VIAL)
+    dispenser.rinse_needle("vial_rack_12", WATER_HCL_VIAL)
 
     # Titration loop
     for i in range(1, NUM_REPEATS + 1):
         dispenser.dispense_between("vial_rack_12", NAOH_VIAL, "well_plate", WELL, transfer_vol=BASE_VOLUME_ML)
-        dispenser.rinse_needle("vial_rack_12", WATER_VIAL)
+        dispenser.rinse_needle("vial_rack_12", WATER_NAOH_VIAL)
         # mix the well
         dispenser.dispense_between(
             source_location="well_plate",
@@ -87,7 +96,7 @@ def run_workflow(q):
         color = dispenser.get_image_color("well_plate_camera", WELL, f"step_{i}", color_space=COLOR_SPACE)
         logger.info(f"Step {i} (after {i * 100} uL NaOH): {color}")
         q.put((i, color, crop_path_for(i)))
-        dispenser.rinse_needle("vial_rack_12", WATER_VIAL) 
+        dispenser.rinse_needle("vial_rack_12", WATER_NAOH_VIAL) 
 
     q.put(None)  # sentinel — workflow done
 
