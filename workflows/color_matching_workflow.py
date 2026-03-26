@@ -61,7 +61,7 @@ MAX_WELLS = 24  # Maximum number of wells on plate (24)
 TARGET_WELL = 0  # Index of well containing the target sample
 RANDOM_SEED = 31
 
-VIRTUAL = False #saves data by default when NOT virtual
+VIRTUAL = True #saves data by default when NOT virtual
 SAVE_DATA = True #option to save data when virtual
 WITHOUT_WATER = True
 SKIP_HOMING = False
