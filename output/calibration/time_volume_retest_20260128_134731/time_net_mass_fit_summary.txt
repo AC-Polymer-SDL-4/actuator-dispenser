@@ -1,0 +1,11 @@
+Fit: mass = k * time + b
+k (g/s) = 0.3824
+b (g)   = -0.0038
+R^2      = 0.9886
+Seconds per gram (s/g) = 2.6148
+N = 12 rows
+
+Per-time stats (mean ± std, n):
+t=0.050s: mean=0.0210 g, std=0.0022 g, n=4
+t=0.500s: mean=0.1765 g, std=0.0187 g, n=4
+t=1.000s: mean=0.3837 g, std=0.0206 g, n=4

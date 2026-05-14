@@ -1,0 +1,6 @@
+Fit: mass = k * time + b
+k (g/s) = 0.3811
+b (g)   = 0.0041
+R^2      = 0.9877
+Seconds per gram (s/g) = 2.6238
+N = 48 rows

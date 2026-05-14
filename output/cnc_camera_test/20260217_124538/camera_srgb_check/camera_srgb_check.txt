@@ -1,0 +1,26 @@
+Camera sRGB Check Report
+Device Index: 0
+Backend: dshow
+Requested WxH: 1280x720
+
+Capture Properties:
+  width: 1280
+  height: 720
+  fps: 0.00
+  fourcc: YUY2
+  convert_rgb: 1
+  capture_time_s: 3.370
+
+Frame Checks:
+  dtype_uint8: True
+  shape_3_channels: True ((720, 1280, 3))
+  value_range: min=0, max=255
+
+Gamma Behavior (luminance vs sRGB decode):
+  mse_linear: 0.026777
+  mse_gamma22: 0.000008
+  ratio_gamma22_to_linear: 0.000
+  Interpretation: ratio < 0.6 suggests sRGB-like gamma coding
+
+Saved sample PNG to: c:\Users\PolymerSDL\Documents\GitHub\actuator-dispenser\output\cnc_camera_test\20260217_124538\camera_srgb_check\sample_frame.png
+Output dir: c:\Users\PolymerSDL\Documents\GitHub\actuator-dispenser\output\cnc_camera_test\20260217_124538\camera_srgb_check

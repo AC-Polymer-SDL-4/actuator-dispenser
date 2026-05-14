@@ -1,0 +1,4 @@
+image_path,R,G,B,H,S,V,L,A,B_lab,color_label
+output/cnc_camera_test/20260127_132045/center_crops/center_crop_well_plate_slot1.jpg,245.6,105.7,175.2,330.2,56.9,96.3,64.2,60.4,-10.0,red
+output/cnc_camera_test/20260127_132045/center_crops/center_crop_well_plate_slot2.jpg,184.9,176.8,39.0,48.2,83.6,73.6,69.4,-10.2,61.3,yellow
+output/cnc_camera_test/20260127_132045/center_crops/center_crop_well_plate_slot0.jpg,42.8,232.8,243.6,183.2,82.4,95.5,84.7,-39.9,-17.9,blue

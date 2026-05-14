@@ -1,7 +1,4 @@
-# Output directories
-output/
-!output/.gitkeep
-!output/uncertainty_measurement_workflow/**
+# Output directories (tracked)
 Other/
 logs/
 
