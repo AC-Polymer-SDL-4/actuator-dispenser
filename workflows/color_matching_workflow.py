@@ -33,7 +33,7 @@ import argparse
 # 'baybe' - Bayesian optimization (default, good exploration)
 # 'gradient' - Gradient descent (fast convergence, may find local minima)
 # 'convex' - Convex optimization (global optimum if problem is convex)
-OPTIMIZER_TYPE = 'baybe'  # Options: 'baybe', 'gradient', 'convex'
+OPTIMIZER_TYPE = 'convex'  # Options: 'baybe', 'gradient', 'convex'
 
 # Import the selected optimizer
 if OPTIMIZER_TYPE == 'baybe':
@@ -61,11 +61,12 @@ MAX_WELLS = 24  # Maximum number of wells on plate (24)
 TARGET_WELL = 0  # Index of well containing the target sample
 RANDOM_SEED = 31
 
-VIRTUAL = True #saves data by default when NOT virtual
+VIRTUAL = False #saves data by default when NOT virtual
 SAVE_DATA = True #option to save data when virtual
 WITHOUT_WATER = True
 SKIP_HOMING = False
 SHOW_CROP = False
+RUN_NAME = None
 
 # Choose initialization method (applies to BayBE, others will use BayBE-compatible behavior)
 # 'sobol' - BayBE's default intelligent Sobol-like initialization (recommended)
@@ -150,6 +151,9 @@ workflow_name = os.path.splitext(os.path.basename(__file__))[0]
 
 def get_output_dir():
     """Generate output directory path based on current settings."""
+    if RUN_NAME:
+        return os.path.join("output", workflow_name, str(RUN_NAME))
+
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     virtual_tag = "_virtual" if VIRTUAL else ""
     
@@ -473,6 +477,7 @@ def main():
     # Regenerate output_dir with updated settings (after CLI parsing)
     output_dir = get_output_dir()
     
+    
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     virtual_tag = "_virtual" if VIRTUAL else ""
     log_filename = f"color_matching_workflow{virtual_tag}_{timestamp}.log"
@@ -492,7 +497,7 @@ def main():
     # Initialize hardware (virtual mode for testing)
     logger.info("Initializing hardware...")
     dispenser = Liquid_Dispenser(
-        cnc_comport="COM5", 
+        cnc_comport="COM4", 
         actuator_comport="COM3", #non-gaming computer
         virtual=VIRTUAL,  # Set via flag; False for real hardware
         camera_index=0, #for non-gaming computer
@@ -905,7 +910,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Color Matching Workflow")
     parser.add_argument("--virtual", action="store_true", help="Run in virtual mode (no hardware movement)")
     parser.add_argument("--skip-homing", action="store_true", help="Skip homing at start")
+    parser.add_argument("--run-name", type=str, help="Explicit output subfolder name under output/<workflow>/")
     parser.add_argument("--optimizer-type", choices=["baybe","gradient","convex"], help="Select optimizer type")
+    parser.add_argument("--initialization-method", choices=["sobol", "corner"],
+                        help="Initialization method for first recommendations")
+    parser.add_argument("--initial-batch-size", type=int, help="Number of wells in the initial recommendation batch")
+    parser.add_argument("--subsequent-batch-size", type=int, help="Batch size for subsequent optimization iterations")
     parser.add_argument("--color-space", choices=["RGB","RGBA","HSV","LAB"], help="Legacy color-space label (kept for compatibility)")
     parser.add_argument("--distance-space", choices=["RGB", "HSV", "LAB", "CIELAB", "RGBN", "HSVN", "LABN", "TRIPLET"],
                         help="Distance space for full_distance objective")
@@ -923,8 +933,20 @@ if __name__ == "__main__":
         VIRTUAL = True
     if args.skip_homing:
         SKIP_HOMING = True
+    if args.run_name:
+        RUN_NAME = args.run_name
     if args.optimizer_type:
         OPTIMIZER_TYPE = args.optimizer_type
+    if args.initialization_method:
+        INITIALIZATION_METHOD = args.initialization_method.lower()
+    if args.initial_batch_size is not None:
+        if args.initial_batch_size <= 0:
+            raise ValueError("--initial-batch-size must be > 0")
+        INITIAL_BATCH_SIZE = int(args.initial_batch_size)
+    if args.subsequent_batch_size is not None:
+        if args.subsequent_batch_size <= 0:
+            raise ValueError("--subsequent-batch-size must be > 0")
+        SUBSEQUENT_BATCH_SIZE = int(args.subsequent_batch_size)
     if args.objective_mode:
         OBJECTIVE_MODE = args.objective_mode
     if args.objective_channel:
