@@ -1,9 +1,0 @@
-calibration_type,volume_index,plate_index,replicate,well_index,target_volume_ml,dispensed_mass_g,dispensed_volume_ml,measured_mass_g,baseline_mass_g,air_time_s,retract_time_s,extend_time_s,buffer_time_s,blowout_vol_ml,speed,timestamp
-volume_dispenser,0,0,1,0,0.1,0.117,0.117,42.408,42.291,,,,0.25,0.2843,32768,2026-01-29 14:53:53
-volume_dispenser,0,0,2,1,0.1,0.101,0.101,42.509,42.408,,,,0.25,0.2843,32768,2026-01-29 14:55:18
-volume_dispenser,1,0,1,2,0.15,0.145,0.145,42.654,42.509,,,,0.25,0.2843,32768,2026-01-29 14:57:17
-volume_dispenser,1,0,2,3,0.15,0.148,0.148,42.802,42.654,,,,0.25,0.2843,32768,2026-01-29 14:58:37
-volume_dispenser,2,0,1,4,0.2,0.168,0.168,42.97,42.802,,,,0.25,0.2843,32768,2026-01-29 15:00:01
-volume_dispenser,2,0,2,5,0.2,0.188,0.188,43.158,42.97,,,,0.25,0.2843,32768,2026-01-29 15:01:52
-volume_dispenser,3,0,1,6,0.25,0.276,0.276,43.434,43.158,,,,0.25,0.2843,32768,2026-01-29 15:03:08
-volume_dispenser,3,0,2,7,0.25,0.228,0.228,43.662,43.434,,,,0.25,0.2843,32768,2026-01-29 15:04:57

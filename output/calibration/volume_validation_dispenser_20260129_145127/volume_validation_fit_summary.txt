@@ -1,5 +1,0 @@
-Fit: measured = k * target + b
-k (unitless gain) = 0.9210
-b (mL)            = 0.0102
-R^2               = 0.8989
-N rows            = 8
